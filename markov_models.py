@@ -103,17 +103,8 @@ def generateTransitionMatrix(folder_path: str, dataset_name: str = "Dataset") ->
     return transition_counter
 
 
-def getTopTransitionsTurkish(matrix, top_n: int = 20) -> pd.DataFrame:
-    # Matrisi DataFrame'e çevir, ardından stack ile uzun formata getir ve değeri sıfırdan büyük olanları filtrele. Son olarak, en yüksek değerleri sırala ve döndür.
-    df = _toDataFrame(matrix)
-    stacked = df.stack().reset_index()
-    stacked.columns = ["from_chord", "to_chord", "value"]
-    stacked = stacked[stacked["value"] > 0]
-    return stacked.sort_values("value", ascending=False).head(top_n).reset_index(drop=True)
-
-
-def getTopTransitionsWestern(matrix, top_n: int = 20) -> pd.DataFrame:
-    # Matrisi DataFrame'e çevir, ardından stack ile uzun formata getir ve değeri sıfırdan büyük olanları filtrele. Son olarak, en yüksek değerleri sırala ve döndür.
+def getTopTransitions(matrix, top_n: int = 20) -> pd.DataFrame:
+    """Ham geçiş sayım matrisindeki en sık geçişleri döndürür."""
     df = _toDataFrame(matrix)
     stacked = df.stack().reset_index()
     stacked.columns = ["from_chord", "to_chord", "value"]

@@ -25,12 +25,21 @@ _HEADERS = {
         'Chrome/124.0.0.0 Safari/537.36'
     )
 }
-_TRUSTED_SITES = [
+_TURKISH_SITES = [
     "repertuarim.com",
     "akormerkezi.com",
     "akor.alternatifim.com",
     "akorlar.com",
 ]
+
+_WESTERN_SITES = [
+    "ultimate-guitar.com",
+    "chordify.net",
+    "chordu.com",
+    "e-chords.com",
+]
+
+_TRUSTED_SITES = _TURKISH_SITES + _WESTERN_SITES
 
 _OPERA_PATHS = [
     r'C:\Users\Asus\AppData\Local\Programs\Opera\opera.exe',
@@ -82,7 +91,7 @@ def _get_webdriver(browser: str):
         return None
 
 
-def _search_url_via_browser(query: str, browser: str) -> str | None:
+def _search_url_via_browser(query: str, browser: str, sites: list[str]) -> str | None:
 
     # Selenium ile DuckDuckGo'da arama yapar, güvenilir bir akor sitesi URL'si döndürür. Bulamazsa None döner.
 
@@ -103,12 +112,11 @@ def _search_url_via_browser(query: str, browser: str) -> str | None:
 
         for a in soup.find_all('a', href=True):
             href = a.get('href', '')
-            # DuckDuckGo'nun kendi URL'lerini (arama, yönlendirme vb.) atla
             if 'duckduckgo.com' in href:
                 continue
             if not href.startswith('http'):
                 continue
-            if any(site in href for site in _TRUSTED_SITES):
+            if any(site in href for site in sites):
                 return href
 
         return None
@@ -123,24 +131,24 @@ def _search_url_via_browser(query: str, browser: str) -> str | None:
             pass
 
 
-def _extract_url_from_ddg(soup: BeautifulSoup) -> str | None:
+def _extract_url_from_ddg(soup: BeautifulSoup, sites: list[str]) -> str | None:
     for a in soup.find_all('a', class_='result__url'):
         link = a.get('href', '')
-        if any(site in link for site in _TRUSTED_SITES):
+        if any(site in link for site in sites):
             if "uddg=" in link:
                 return urllib.parse.unquote(link.split("uddg=")[1].split("&")[0])
             return f"https://{link.strip()}" if not link.startswith('http') else link
     return None
 
 
-def _search_url_via_requests(query: str) -> str | None:
+def _search_url_via_requests(query: str, sites: list[str]) -> str | None:
 
     try:
         ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
         res = requests.get(ddg_url, headers=_HEADERS, timeout=10)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, 'html.parser')
-        return _extract_url_from_ddg(soup)
+        return _extract_url_from_ddg(soup, sites)
     except Exception:
         return None
 
@@ -185,7 +193,7 @@ def _build_failure(artist: str, song: str, reason: str) -> dict:
 
 # ANA FONKSİYON
 
-def scrape_chords_from_web(artist: str, song_name: str) -> dict:
+def scrape_chords_from_web(artist: str, song_name: str, language: str = "tr") -> dict:
     """
     Verilen sanatçı ve şarkı için internet üzerinden akor çeker.
 
@@ -193,6 +201,11 @@ def scrape_chords_from_web(artist: str, song_name: str) -> dict:
       1. PREFERRED_BROWSER (varsayılan: chrome) ile Selenium arama
       2. Kalan tarayıcılar sırasıyla denenir (firefox → opera)
       3. Hiçbiri çalışmazsa eski requests/DuckDuckGo yöntemiyle devam edilir
+
+    Parametreler:
+        artist    : Sanatçı adı
+        song_name : Şarkı adı
+        language  : "tr" → Türkçe akor siteleri | "en" → Batı müziği siteleri (varsayılan: "tr")
 
     Returns:
         {
@@ -204,13 +217,22 @@ def scrape_chords_from_web(artist: str, song_name: str) -> dict:
             "error": str   (yalnızca success=False ise)
         }
     """
-    print(f" Web İstihbaratı Toplanıyor: '{artist} - {song_name}'...")
+    print(f" Web İstihbaratı Toplanıyor: '{artist} - {song_name}' [dil={language}]...")
 
-    queries = [
-        f"{artist} {song_name} akor repertuarim",
-        f"{song_name} akor repertuarim",
-        f"{artist} {song_name} akor",
-    ]
+    if language == "en":
+        active_sites = _WESTERN_SITES
+        queries = [
+            f"{artist} {song_name} chords ultimate-guitar",
+            f"{artist} {song_name} chords",
+            f"{song_name} guitar chords",
+        ]
+    else:
+        active_sites = _TURKISH_SITES
+        queries = [
+            f"{artist} {song_name} akor repertuarim",
+            f"{song_name} akor repertuarim",
+            f"{artist} {song_name} akor",
+        ]
 
     # Tarayıcı deneme sırası: önce tercih edilen, sonra diğerleri
     browser_order = [PREFERRED_BROWSER] + [
@@ -224,12 +246,12 @@ def scrape_chords_from_web(artist: str, song_name: str) -> dict:
 
         for browser in browser_order:
             if browser == 'requests':
-                found_url = _search_url_via_requests(query)
+                found_url = _search_url_via_requests(query, active_sites)
                 if found_url:
                     print(f"    Requests yöntemi ile bulundu.")
                     break
             else:
-                found_url = _search_url_via_browser(query, browser)
+                found_url = _search_url_via_browser(query, browser, active_sites)
                 if found_url:
                     print(f"    {browser.capitalize()} ile bulundu.")
                     break

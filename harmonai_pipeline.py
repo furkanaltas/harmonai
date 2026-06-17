@@ -19,6 +19,8 @@ from modules import llm_agent
 from modules import web_scraper
 from modules import math_theory
 from modules import audio_core
+from modules import fast_analyzer
+from modules.db_manager import db_init, db_get_or_create_song, db_save_analysis
 
 
 def _midi_donusum_pipeline(wav_path: str, output_folder: str):
@@ -190,5 +192,133 @@ def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: 
         "detected_mode": detected_mode,
         "tempo": tempo,
         "final_chords": final_chords,
+        "chord_sequence": chord_seq,
         "web_chords": web_chords
+    }
+
+
+def run_harmonai_pipeline_fast(url_or_path: str, artist_name: str, song_title: str, language: str = "tr"):
+    """
+    Basic Pitch olmadan, librosa tabanlı hızlı analiz pipeline'ı.
+    Web scraping ile paralel çalışır; MIDI dönüşümü yapılmaz.
+
+    Parametreler:
+        url_or_path  : YouTube linki veya lokal WAV yolu
+        artist_name  : Sanatçı adı (web scraping ve rapor için)
+        song_title   : Şarkı adı
+        language     : "tr" Türkçe akor siteleri | "en" Batı siteleri
+    """
+    print('=' * 70)
+    print(f'HarmonAI (FAST) Başlatılıyor: {artist_name} - {song_title}')
+    print('=' * 70)
+
+    output_folder = 'analyzed_songs'
+    os.makedirs(output_folder, exist_ok=True)
+
+    # ADIM 1: Ses dosyasını hazırla
+    wav_path = None
+    if 'http' in url_or_path:
+        wav_path, _ = audio_core.process_youtube_link(url_or_path, output_folder)
+    else:
+        if os.path.exists(url_or_path):
+            wav_path = url_or_path
+        else:
+            print('Dosya bulunamadı.')
+            return None
+
+    if not wav_path:
+        print('Ses dosyası hazırlanamadı, işlem iptal.')
+        return None
+
+    # ADIM 2: Paralel — web scraping + librosa analizi
+    print('\n Paralel işlemler başlatılıyor:')
+    print('   -> [Thread 1] Web İstihbaratı : scrape_chords_from_web()')
+    print('   -> [Thread 2] Hızlı Analiz    : fast_analyzer.analyze_wav_fast()')
+    print('-' * 70)
+
+    t_baslangic = time.perf_counter()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        web_gelecek = executor.submit(
+            web_scraper.scrape_chords_from_web,
+            artist_name,
+            song_title,
+            language,
+        )
+        analiz_gelecek = executor.submit(
+            fast_analyzer.analyze_wav_fast,
+            wav_path,
+        )
+
+        web_chords = web_gelecek.result()
+        analiz = analiz_gelecek.result()
+
+    t_bitis = time.perf_counter()
+    print(f'\n Paralel işlem tamamlandı. Toplam süre: {t_bitis - t_baslangic:.1f}s')
+
+    if analiz.get("error"):
+        print(f'Analiz hatası: {analiz["error"]}')
+        return None
+
+    detected_key   = analiz["key"]
+    detected_mode  = analiz["mode"]
+    tempo          = analiz["tempo"]
+    final_chords   = analiz["final_chords"]
+    chord_seq      = analiz["chord_sequence"]
+
+    print(f'   => Ton      : {detected_key} {detected_mode}')
+    print(f'   => Tempo    : {int(tempo)} BPM')
+    print(f'   => Akorlar  : {final_chords}')
+
+    if web_chords.get('success'):
+        print(f"   => Web Akorları : {web_chords['unique_chords']}")
+    else:
+        print(f"   => Web Sonucu   : Bulunamadı ({web_chords.get('error', '?')})")
+
+    # ADIM 3: LLM raporu
+    audio_data_packet = {
+        'name':   f'{artist_name} - {song_title}',
+        'key':    detected_key,
+        'mode':   detected_mode,
+        'tempo':  tempo,
+        'chords': final_chords,
+    }
+
+    final_report = llm_agent.generate_music_report(audio_data_packet, web_chords)
+
+    # Analiz sonucunu DB'ye kaydet
+    try:
+        db_init()
+        song_id = db_get_or_create_song(
+            filename=f"{artist_name} - {song_title}",
+            artist=artist_name,
+            title=song_title,
+        )
+        db_save_analysis(
+            song_id=song_id,
+            analyzer="fast",
+            detected_key=detected_key,
+            detected_mode=detected_mode,
+            tempo=tempo,
+            chords=final_chords,
+            chord_sequence=chord_seq,
+            web_chords=web_chords,
+        )
+        print("[DB] Analiz kaydedildi.")
+    except Exception as e:
+        print(f"[DB] Kayıt hatası (analiz etkilenmedi): {e}")
+
+    print('\n' + '=' * 70)
+    print('HARMONAI FINAL RAPORU [FAST]')
+    print('=' * 70)
+    print(final_report)
+
+    return {
+        "final_report":   final_report,
+        "detected_key":   detected_key,
+        "detected_mode":  detected_mode,
+        "tempo":          tempo,
+        "final_chords":   final_chords,
+        "chord_sequence": chord_seq,
+        "web_chords":     web_chords,
     }
