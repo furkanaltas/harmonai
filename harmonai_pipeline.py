@@ -146,9 +146,9 @@ def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: 
         if c:
             chord_seq.append(c)
 
-    # Gürültü filtresi: toplam sürenin %2'sinden az görünen akorları gözardı et
+    # Gürültü filtresi: toplam sürenin %5'inden az görünen akorları gözardı et
     chord_counts = collections.Counter(chord_seq)
-    threshold = len(chord_seq) * 0.02
+    threshold = len(chord_seq) * 0.05
     final_chords = [c for c, count in chord_counts.most_common(12) if count > threshold]
 
     # Filtre çok katıysa ve hiç akor kalmadiysa en az 4 akor garanti et
