@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+youtube_downloads/
+dataset_temp_audio/
+analyzed_songs/
+veri_seti/
+*.wav
+*.mp3
+*.midi
+*.mid
+.claude/
+.vscode/

@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HarmonAI - Tez Sunumu</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:ital,wght@0,300;0,700;1,300&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+    <style>
+        :root {
+            --bg-color: #f8fafc; /* Very light slate */
+            --text-main: #1e293b; /* Dark slate */
+            --text-muted: #64748b; /* Medium slate */
+            --accent-blue: #0284c7; /* Light blue for highlights */
+            --accent-orange: #ea580c; /* Orange for highlights */
+            --border-color: #e2e8f0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent scrolling during presentation */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        /* The Slide Canvas - Mimicking a 16:9 Presentation */
+        #slide-container {
+            width: 1280px; /* Standard 16:9 width */
+            height: 720px; /* Standard 16:9 height */
+            background-color: white;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding: 40px 60px;
+            box-sizing: border-box;
+            opacity: 0;
+            transition: opacity 0.4s ease-in-out;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            z-index: 0;
+        }
+
+        .slide.active {
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 10;
+        }
+
+        /* Slide Header */
+        .slide-header {
+            border-bottom: 2px solid var(--accent-blue);
+            padding-bottom: 15px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+
+        .slide-title {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin: 0;
+        }
+
+        /* Slide Content Area */
+        .slide-content {
+            flex: 1;
+            display: flex;
+            flex-direction: row; /* Default side-by-side */
+            gap: 40px;
+        }
+
+        /* Typography */
+        h1 { font-size: 48px; font-weight: 700; margin-bottom: 20px; }
+        h2 { font-size: 36px; font-weight: 600; margin-bottom: 15px; }
+        h3 { font-size: 24px; font-weight: 600; margin-bottom: 10px; }
+        p { font-size: 18px; line-height: 1.6; margin-bottom: 15px; }
+        
+        ul {
+            font-size: 20px;
+            line-height: 1.6;
+            margin-left: 20px;
+            color: var(--text-main);
+        }
+        
+        li {
+            margin-bottom: 12px;
+        }
+
+        .highlight-blue { color: var(--accent-blue); font-weight: 600; }
+        .highlight-orange { color: var(--accent-orange); font-weight: 600; }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 16px;
+        }
+        
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f1f5f9;
+            font-weight: 600;
+        }
+
+        /* Custom Visual Elements */
+        .card {
+            background-color: white;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        }
+
+        .huge-number {
+            font-size: 72px;
+            font-weight: 700;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        /* Footer */
+        .slide-footer {
+            position: absolute;
+            bottom: 20px;
+            left: 60px;
+            right: 60px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border-color);
+            padding-top: 10px;
+        }
+
+        /* Terminal styling for demo slide */
+        .mock-terminal {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 20px;
+            border-radius: 6px;
+            width: 100%;
+            height: 100%;
+            font-size: 14px;
+            box-sizing: border-box;
+            border: 1px solid #333;
+        }
+
+        /* YAZDIRMA (PDF) AYARLARI */
+        @media print {
+            @page {
+                size: 1280px 720px; /* Sunum boyutunu zorla */
+                margin: 0;
+            }
+            body, html {
+                height: auto !important;
+                overflow: visible !important;
+                display: block !important;
+                background-color: white !important;
+            }
+            #slide-container {
+                width: 100% !important;
+                height: auto !important;
+                box-shadow: none !important;
+                display: block !important;
+                overflow: visible !important;
+            }
+            .slide {
+                position: relative !important; /* Üst üste binmeyi engelle */
+                opacity: 1 !important; /* Tüm slaytları görünür yap */
+                page-break-after: always !important; /* Her slayt sonu yeni sayfaya geç */
+                break-after: page !important;
+                width: 1280px !important;
+                height: 720px !important;
+                display: flex !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important; /* Renkleri koru */
+            }
+            .slide:last-child {
+                page-break-after: auto !important;
+                break-after: auto !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="slide-container">
+
+        <!-- Slayt 1: Açılış -->
+        <div class="slide active" style="padding: 0;">
+            <div style="display: flex; height: 100%; width: 100%;">
+                <!-- Left Side: Visual -->
+                <div style="flex: 1; background-color: #0f172a; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+                     <!-- Pseudo-watermark -->
+                     <div style="position: absolute; opacity: 0.05; font-size: 200px; color: white; transform: rotate(-15deg);">🎵</div>
+                     <div style="text-align: center; color: white; z-index: 1;">
+                         <div style="font-size: 48px; font-weight: bold; margin-bottom: 20px;">HarmonAI</div>
+                         <div style="font-size: 24px; color: #cbd5e1;">Yapay Zekâ Destekli Armonik Analiz Sistemi</div>
+                     </div>
+                </div>
+                
+                <!-- Right Side: Text -->
+                <div style="flex: 1; padding: 60px; display: flex; flex-direction: column; justify-content: center; background-color: #1e293b; color: white;">
+                    <h2 style="font-size: 32px; margin-bottom: 30px; border-bottom: 1px solid #334155; padding-bottom: 15px;">Müzik Teorisini Matematikle İspatlayabilir miyiz?</h2>
+                    
+                    <div style="font-size: 28px; margin-bottom: 40px; background: rgba(2, 132, 199, 0.2); padding: 15px; border-left: 4px solid var(--accent-blue);">
+                        1.664 MIDI Eseri<br>
+                        <span style="font-size: 18px; color: #94a3b8;">848 Türkçe + 816 Batı</span>
+                    </div>
+
+                    <ul style="color: #cbd5e1; list-style-type: square; margin-bottom: 20px;">
+                        <li>Türk müziği ile Batı müziği - iki ayrı harmonik evren mi?</li>
+                        <li>1.664 MIDI eseri, 12 boyutlu matematik, 1 soru</li>
+                        <li>HarmonAI: Veri bilimi, müzik teorisinin sınırlarını nereden çiziyor?</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="slide-footer" style="color: #94a3b8; border-top-color: #334155; z-index: 10;">
+                <span>Furkan Altas | 04220000368</span>
+                <span>Ege Üniversitesi, Fen Fakültesi, Matematik Bölümü</span>
+            </div>
+        </div>
+
+        <!-- Slayt 2: Problem -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Krumhansl-Kessler'den Hicaz'a - Bilinmeyenin Haritası</h2>
+            </div>
+            <div class="slide-content">
+                <div style="flex: 1;">
+                    <ul style="margin-top: 20px;">
+                        <li><strong class="highlight-blue">Krumhansl-Kessler (1982):</strong> Majör ve Minör için 12 boyutlu algısal profil - <span style="color: red;">ancak Türk makamları yok.</span></li>
+                        <li><strong>Mevcut Markov çalışmaları:</strong> Küçük veri setleri, düşük boyutlu matrisler.</li>
+                        <li><strong>Hedef:</strong> 108x108 tam boyutlu analiz + Hicaz & Kürdi profillerini modele dahil etmek.</li>
+                    </ul>
+                </div>
+                <div style="flex: 1;" class="card">
+                    <!-- Placeholder for Krumhansl-Kessler visual -->
+                    <div style="height: 150px; border-bottom: 1px dashed #ccc; margin-bottom: 20px; display: flex; align-items: flex-end; justify-content: space-around; padding-bottom: 10px;">
+                        <div style="width: 20px; height: 100px; background-color: var(--accent-blue);"></div>
+                        <div style="width: 20px; height: 40px; background-color: var(--accent-blue);"></div>
+                        <div style="width: 20px; height: 80px; background-color: var(--accent-blue);"></div>
+                        <div style="width: 20px; height: 30px; background-color: var(--accent-blue);"></div>
+                    </div>
+                    <div style="text-align: center; color: red; font-size: 24px; font-weight: bold; margin-bottom: 20px;">
+                        Hicaz? Kürdi? → KRONOLOJİDE YOK
+                    </div>
+                    <div style="background-color: #f1f5f9; padding: 15px; text-align: center; border-radius: 4px;">
+                        <div style="font-size: 14px; color: var(--text-muted);">TVD aralığı: 0,05-0,15 (Aynı kültür içi)</div>
+                        <div style="font-size: 20px; font-weight: bold; margin-top: 5px;">Türk vs Batı = ?</div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-footer"><span>HarmonAI</span><span>Slayt 2</span></div>
+        </div>
+
+        <!-- Slayt 3: Sistem Mimarisi -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">HarmonAI: 7 Katmanlı Sistem Mimarisi</h2>
+            </div>
+            <div class="slide-content" style="flex-direction: row; align-items: center;">
+                <!-- Sol Taraf: Görsel -->
+                <div style="flex: 1; text-align: center; display: flex; justify-content: center;">
+                    <img src="image_92e95e.png" alt="Sistem Mimarisi" style="max-height: 500px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+                </div>
+
+                <!-- Sağ Taraf: Kısa Açıklamalar -->
+                <div style="flex: 1; padding-left: 20px;">
+                    <ul style="line-height: 1.8; font-size: 18px;">
+                        <li><strong class="highlight-blue">1 & 2. Katman:</strong> Ham ses girişi, CNN (Basic Pitch) ile MIDI dönüşümü ve perküsyon filtreleme.</li>
+                        <li><strong class="highlight-orange">3. Katman:</strong> STFT üzerinden 12 boyutlu Kroma vektörü çıkarımı.</li>
+                        <li><strong class="highlight-blue">4 & 5. Katman:</strong> 108 sınıflı şablon eşleştirme, Bayesyen öncül ve döngüsel kaydırma (HPCP) ile ton/makam tespiti.</li>
+                        <li><strong class="highlight-orange">6. Katman:</strong> Markov zincirleri ile olasılıksal geçiş matrislerinin modellenmesi.</li>
+                        <li><strong style="color: #10b981;">7. Katman:</strong> Gemini 2.5 Flash API ile sayısal verilerin müzikolojik anlamsal rapora çevrilmesi.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="slide-footer"><span>HarmonAI</span><span>Slayt 3</span></div>
+        </div>
+
+        <!-- Slayt 4: Veri Seti & Veri Madenciliği -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">1.664 MIDI Eser: Nasıl Toplandı?</h2>
+            </div>
+            <div class="slide-content">
+                <div style="flex: 1;">
+                    <ul style="margin-bottom: 30px;">
+                        <li><strong>1.664 MIDI:</strong> 848 Türkçe pop/rock, 816 Batı pop/rock - <span class="highlight-blue">Eşit ve dengeli.</span></li>
+                        <li><strong>Web Tabanlı Çapraz Doğrulama:</strong> DuckDuckGo + Selenium/Regex ile Türkçe akor sitelerinden veri kazıma.</li>
+                        <li><strong>Eşleştirme:</strong> Ses analizi ile web verisi eşleştirilip Gemini 2.5 Flash'a çift kaynaklı girdi olarak sunulur.</li>
+                    </ul>
+
+                    <div style="background-color: #f1f5f9; padding: 15px; border-left: 3px solid var(--accent-blue); display: flex; align-items: center; justify-content: center; gap: 15px; font-weight: bold;">
+                        DuckDuckGo ➔ Selenium ➔ Regex ➔ Çapraz Doğrulama
+                    </div>
+                </div>
+                
+                <div style="flex: 1;" class="card">
+                    <!-- Faux Pie Charts -->
+                    <div style="display: flex; justify-content: space-around; margin-bottom: 20px;">
+                        <div style="text-align: center;">
+                            <div style="width: 100px; height: 100px; border-radius: 50%; background: conic-gradient(var(--accent-orange) 100%, transparent 0); margin: 0 auto 10px;"></div>
+                            <strong>848 Türkçe</strong>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="width: 100px; height: 100px; border-radius: 50%; background: conic-gradient(var(--accent-blue) 100%, transparent 0); margin: 0 auto 10px;"></div>
+                            <strong>816 Batı</strong>
+                        </div>
+                    </div>
+                    
+                    <!-- Faux Terminal: Sadece Crawl İşlemi -->
+                    <div class="mock-terminal" style="height: auto; font-size: 13px; padding: 15px; overflow: hidden; line-height: 1.6;">
+                        &gt; Web İstihbaratı Toplanıyor: 'Mor ve Ötesi - Yaz Yaz Yaz'...<br>
+                        &gt; Aranıyor: 'Mor ve Ötesi Yaz Yaz Yaz akor repertuarim'<br>
+                        &gt; Hedef Site: https://www.repertuarim.com/akor/mor-ve-otesi-yaz-yaz-yaz-akor-774.html<br>
+                        &gt; Web'den Çekilen Akorlar: ['Am', 'F', 'Dm', 'B', 'Em', 'G']<br>
+                        &gt; Her iki paralel işlem tamamlandı. Toplam süre: 28.9s<br>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-footer"><span>HarmonAI</span><span>Slayt 4</span></div>
+        </div>
+
+        <!-- Slayt 5: Matematiksel Altyapı -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">STFT, Kroma Vektörleri ve Kosinüs Benzerliği</h2>
+            </div>
+            <div class="slide-content">
+                <div style="flex: 1.2;">
+                    <ul style="margin-bottom: 20px;">
+                        <li><strong>STFT:</strong> Ses sinyalini zaman-frekans uzayında temsil eder; oktav değişmezliği sağlayarak <strong>farklı tonlardan çalınan eserlerin güvenilir bir şekilde analiz edilmesini</strong> sunar.</li>
+                        <li><strong>108 sınıflı şablon kütüphanesi:</strong> Her akor için önceden hesaplanmış ideal kroma vektörü.</li>
+                        <li><strong>Bayesyen öncül:</strong> Komşu akorlar bağlamında olasılık skoru ağırlıklandırılır (+0,15 bonus).</li>
+                    </ul>
+                </div>
+                <div style="flex: 0.8; display: flex; flex-direction: column; gap: 20px;">
+                    <div class="card" style="text-align: center; padding: 15px;">
+                        <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 5px;">Kısa Zamanlı Fourier Dönüşümü (STFT)</div>
+                        <div style="font-size: 20px; padding: 10px 0;">$$X(t,f) = \sum x(n) \cdot w(n-t) \cdot e^{-j2\pi fn/N}$$</div>
+                    </div>
+                    <div class="card" style="text-align: center; padding: 15px;">
+                        <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 5px;">Kosinüs Benzerliği</div>
+                        <div style="font-size: 20px; padding: 10px 0;">$$S_C = \frac{c \cdot t_k}{\|c\| \cdot \|t_k\|}$$</div>
+                    </div>
+                    <div class="card" style="text-align: center; padding: 15px;">
+                        <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 5px;">Bayesyen Bonus</div>
+                        <div style="font-size: 20px; padding: 10px 0;">$$S_w = S_C + c_b \cdot (\text{kontekst})$$</div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-footer"><span>HarmonAI</span><span>Slayt 5</span></div>
+        </div>
+
+        <!-- Slayt 6: TVD -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">İki Kültür, İki Evren: Toplam Varyasyon Uzaklığı</h2>
+            </div>
+            <div class="slide-content" style="flex-direction: column; align-items: center; justify-content: flex-start;">
+                
+                <div class="huge-number highlight-orange" style="font-size: 80px; line-height: 1; margin-bottom: 10px;">0,389</div>
+                <div style="font-size: 22px; font-weight: 600; margin-bottom: 20px;">Toplam Varyasyon Uzaklığı (TVD) - Türk vs. Batı</div>
+
+                <div style="width: 80%; position: relative; height: 25px; background: #f1f5f9; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; margin-bottom: 20px;">
+                    <!-- Normal range indicator -->
+                    <div style="position: absolute; left: 5%; width: 10%; height: 100%; background: var(--accent-blue); opacity: 0.5;"></div>
+                    <div style="position: absolute; left: 5%; top: 30px; font-size: 12px; font-weight: bold; width: 10%; text-align: center;">[0,05 - 0,15]<br>Aynı Kültür İçi</div>
+                    
+                    <!-- Value indicator -->
+                    <div style="position: absolute; left: 38.9%; top: 0; width: 4px; height: 100%; background: var(--accent-orange);"></div>
+                    <div style="position: absolute; left: 38.9%; top: -25px; transform: translateX(-50%); font-weight: bold; color: var(--accent-orange);">0,389</div>
+                </div>
+
+                <ul style="margin-top: 10px; max-width: 800px; width: 100%; font-size: 18px; line-height: 1.5;">
+                    <li><strong>108×108 Markov matrisleri:</strong> Türk ve Batı veri setleri için ayrı ayrı hesaplandı.</li>
+                    <li><strong>TVD = 0,389:</strong> Aynı kültür içi beklenen [0,05-0,15] aralığının çok üzerinde.</li>
+                    <li><strong>Sonuç:</strong> İki kültürün armonik geçiş dağılımı istatistiksel olarak anlamlı biçimde ayrışıyor.</li>
+                </ul>
+
+            </div>
+            <div class="slide-footer"><span>HarmonAI</span><span>Slayt 6</span></div>
+        </div>
+
+        <!-- Slayt 7: Delta Matrisi -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Delta Matrisi: Türkçe Esus4→Fmaj7, Batı A#maj7→Gm7</h2>
+            </div>
+            <div class="slide-content" style="flex-direction: column;">
+                
+                <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                    <div style="flex: 1; text-align: center; padding: 15px; border-left: 4px solid var(--accent-orange); background: rgba(234, 88, 12, 0.05);">
+                        <div style="font-weight: bold; color: var(--accent-orange); margin-bottom: 5px;">TÜRK BASKINI</div>
+                        <div style="font-size: 24px;">Esus4 ➔ Fmaj7</div>
+                        <div style="font-size: 14px; margin-top: 5px;">(Kürdi/Hicaz Çözümü)</div>
+                    </div>
+                    <div style="width: 20px;"></div>
+                    <div style="flex: 1; text-align: center; padding: 15px; border-left: 4px solid var(--accent-blue); background: rgba(2, 132, 199, 0.05);">
+                        <div style="font-weight: bold; color: var(--accent-blue); margin-bottom: 5px;">BATI BASKINI</div>
+                        <div style="font-size: 24px;">A#maj7 ➔ Gm7</div>
+                        <div style="font-size: 14px; margin-top: 5px;">(Diyatonik IVmaj7→IIm7)</div>
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Geçiş</th>
+                            <th>TÜRK</th>
+                            <th>BATI</th>
+                            <th>Yorum</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Esus4 → Fmaj7</strong></td>
+                            <td>0,231</td>
+                            <td>0,092</td>
+                            <td>Kürdi/Hicaz yarım seslik çözüm</td>
+                        </tr>
+                        <tr style="background-color: #fef08a;">
+                            <td><strong>D → Dm</strong></td>
+                            <td>0,196</td>
+                            <td>0,077</td>
+                            <td><strong>"Damar" minörleştirme hissiyatı</strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>A#maj7 → Gm7</strong></td>
+                            <td>0,049</td>
+                            <td>0,189</td>
+                            <td>Batı diyatonik IVmaj7→IIm7</td>
+                        </tr>
+                        <tr>
+                            <td><strong>G#maj7 → Fm7</strong></td>
+                            <td>0,041</td>
+                            <td>0,171</td>
+                            <td>Batı fonksiyonel hareket</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+            </div>
+            <div class="slide-footer"><span>HarmonAI</span><span>Slayt 7</span></div>
+        </div>
+
+        <!-- Slayt 8: Harmonik Derece -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Hicaz İmzası & "Damar" Faktörü: Rakamlarla</h2>
+            </div>
+            <div class="slide-content" style="align-items: center;">
+                
+                <div style="flex: 1.1;">
+                    <ul style="margin-bottom: 0;">
+                        <li><strong>bII (Bemol 2):</strong> Türk <span class="highlight-orange">%10,40</span> vs Batı <span class="highlight-blue">%7,59</span><br>→ <span style="color: green; font-weight: bold;">+2,81 puan fark</span> (Hicaz/Kürdi ana yapı taşı)</li>
+                        <br>
+                        <li><strong>bVI (Bemol 6):</strong> Türk <span class="highlight-orange">%9,82</span> vs Batı <span class="highlight-blue">%6,25</span><br>→ <span style="color: green; font-weight: bold;">+3,57 puan fark</span> (En büyük kültürel ayrışma)</li>
+                        <br>
+                        <li><strong>V (Dominant):</strong> Batı <span class="highlight-blue">%8,42</span> vs Türk <span class="highlight-orange">%6,74</span><br>→ Batı'nın V→I fonksiyonel çekimi sayısal teyit</li>
+                    </ul>
+                </div>
+
+                <div style="flex: 0.9;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Derece</th>
+                                <th>TÜRK% → BATI% [Fark]</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr style="border: 2px solid red;">
+                                <td><strong>bII</strong> (Hicaz/Kürdi imzası)</td>
+                                <td>%10,40 → %7,59 <strong>[+2,81]</strong></td>
+                            </tr>
+                            <tr style="border: 2px solid red;">
+                                <td><strong>bVI</strong> ("Damar" faktörü)</td>
+                                <td>%9,82 → %6,25 <strong>[+3,57]</strong></td>
+                            </tr>
+                            <tr>
+                                <td><strong>V</strong> (Batı dominant çekimi)</td>
+                                <td>%6,74 → %8,42 <strong>[-1,68]</strong></td>
+                            </tr>
+                            <tr>
+                                <td><strong>IV</strong> (Batı subdominant)</td>
+                                <td>%10,76 → %12,76 <strong>[-2,00]</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+            <div class="slide-footer"><span>HarmonAI</span><span>Slayt 8</span></div>
+        </div>
+
+        <!-- Slayt 9: Makine Öğrenmesi -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Makam Bir Frekans Değil, Göreli Harmonik Bir Olgudur</h2>
+            </div>
+            <div class="slide-content" style="flex-direction: column;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; height: 200px; margin-bottom: 40px; padding: 0 40px; border-bottom: 2px solid var(--border-color);">
+                    <!-- Bar 1 -->
+                    <div style="width: 25%; display: flex; flex-direction: column; align-items: center;">
+                        <div style="font-weight: bold; margin-bottom: 10px;">%29,41</div>
+                        <div style="width: 100%; height: 29px; background-color: #94a3b8;"></div>
+                        <div style="text-align: center; font-size: 12px; margin-top: 10px;">Yapısal Öznitelik<br>(Tempo vb.)</div>
+                    </div>
+                    <!-- Bar 2 -->
+                    <div style="width: 25%; display: flex; flex-direction: column; align-items: center;">
+                        <div style="font-weight: bold; margin-bottom: 10px;">%32,35</div>
+                        <div style="width: 100%; height: 32px; background-color: var(--accent-blue);"></div>
+                        <div style="text-align: center; font-size: 12px; margin-top: 10px;">Ham Kroma<br>Vektörü</div>
+                    </div>
+                    <!-- Arrow -->
+                    <div style="margin-bottom: 50px; text-align: center; width: 15%;">
+                        <div style="font-weight: bold; color: var(--accent-orange); font-size: 12px;">Tonal Normalizasyon<br>(Z12 Kaydırma)</div>
+                        <div style="font-size: 24px; color: var(--accent-orange);">➔</div>
+                    </div>
+                    <!-- Bar 3 -->
+                    <div style="width: 25%; display: flex; flex-direction: column; align-items: center;">
+                        <div style="font-weight: bold; font-size: 28px; color: #10b981; margin-bottom: 10px;">%78,82</div>
+                        <div style="width: 100%; height: 78px; background-color: #10b981;"></div>
+                        <div style="text-align: center; font-size: 12px; margin-top: 10px; font-weight: bold;">Tonal Norm.<br>Kroma</div>
+                    </div>
+                </div>
+
+                <div class="card" style="background-color: #f8fafc;">
+                    <p style="margin: 0; text-align: center;"><strong>Model:</strong> Random Forest | <strong>Parametreler:</strong> n_estimators=100, test_size=0.20 | <strong>Veri:</strong> 848 eser eğitim, 170 test</p>
+                    <p style="margin: 10px 0 0 0; text-align: center; color: var(--accent-orange); font-weight: bold;">Sonuç: Makam yapısal değil, göreli harmonik bir olgudur. (+46 Puan Sıçrama)</p>
+                </div>
+
+            </div>
+            <div class="slide-footer"><span>HarmonAI</span><span>Slayt 9</span></div>
+        </div>
+
+        <!-- Slayt 10: Demo -->
+        <!-- padding: 0 ile sağdaki beyaz boşluk hatası giderildi, arka plan tam ekrana yayıldı -->
+        <div class="slide" style="padding: 0;">
+            <div style="background-color: #0f172a; color: white; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; padding: 40px;">
+                
+                <h1 style="color: white; font-size: 56px; margin-bottom: 10px;">LIVE DEMO</h1>
+                <p style="font-size: 20px; color: #94a3b8; margin-bottom: 30px;">DuckDuckGo Crawler ➔ Ses Analizi ➔ Gemini 2.5 Flash API</p>
+
+                <div style="background: rgba(255,255,255,0.05); border: 1px solid #334155; padding: 20px; border-radius: 8px; width: 70%; max-width: 800px; margin-bottom: 0;">
+                    <strong style="color: var(--accent-orange); display: block; margin-bottom: 10px; font-size: 24px;">Hedef: Barış Manço - "Hal Hal"</strong>
+                    <div style="text-align: left; font-size: 18px; color: #cbd5e1;">
+                        Web'de bulunmayan <strong style="color: white;">Frijiyen dominant / Hicaz</strong> geçişlerinin model tarafından kendi tespiti.
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const slides = document.querySelectorAll('.slide');
+        let currentSlide = 0;
+
+        function updateSlides() {
+            slides.forEach((slide, index) => {
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                } else {
+                    slide.classList.remove('active');
+                }
+            });
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === 'Space') {
+                if (currentSlide < slides.length - 1) {
+                    currentSlide++;
+                    updateSlides();
+                }
+            } else if (e.key === 'ArrowLeft') {
+                if (currentSlide > 0) {
+                    currentSlide--;
+                    updateSlides();
+                }
+            }
+        });
+
+        // Initialize MathJax after content is loaded
+        window.onload = function() {
+            updateSlides();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,194 @@
+# HarmonAI Pipeline ASENKRON VERSIYON
+
+#   AKIŞ (Paralel):
+#       [Indir] -> [Web Scraping] --+
+#                  [MIDI Donusum] --+--> [Analiz] -> [LLM]
+
+# Neden ThreadPoolExecutor?
+#   - Web scraping: I/O bound (Selenium ag gecikmesi bekleniyor) -> thread ideal
+#   - Basic Pitch : TensorFlow inference sirasinda GIL'i serbest birakir
+#     -> ayni surecte baska thread paralel calisabilir
+#   - asyncio yerine thread: mevcut senkron kutuphanelerle (Selenium, requests, pretty_midi) uyumlu olmasi icin thread tercih edildi.
+
+import concurrent.futures
+import time
+import pretty_midi
+import collections
+import os
+from modules import llm_agent
+from modules import web_scraper
+from modules import math_theory
+from modules import audio_core
+
+
+def _midi_donusum_pipeline(wav_path: str, output_folder: str):
+    """
+    Yardımcı iş fonksiyon: MIDI dönüşüm + davul temizleme adımlarını sıralı çalıştırılır ve temizlenmiş MIDI yolunu döndürür.
+    ThreadPoolExecutor'a submit edilerek web scraping ile EŞ ZAMANLI çalıştırılmak üzere tasarlanmıştır.
+    
+    Parametreler:
+    wav_path      : Islenecek WAV dosyasinin yolu
+    output_folder : MIDI ciktilarinin kaydedilecegi klasor
+    Dondurur: Davulsuz MIDI dosyasinin yolu; hata durumunda None
+    """
+
+    # Adim A: WAV -> MIDI donusumu (Basic Pitch CNN inference, ~60-90sn)
+    raw_midi = audio_core.audio_to_midi(wav_path, output_folder)
+    if not raw_midi:
+        return None
+
+    # Adim B: MIDI'den davul/perkusyon kanallarini temizle
+    return audio_core.clean_midi_drums(raw_midi)
+
+
+def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: str):
+    """
+    Parametreler:
+    url_or_path : YouTube linki veya lokal WAV dosya yolu
+    artist_name  : Sanatçı adı (web scraping için)
+    song_title   : Şarkı adı (web scraping için)
+
+    HarmonAI ana pipeline'inin asenkron/eşzamanlı versiyonu.
+    PARALEL ÇALIŞAN BÖLÜMLER:
+        Thread-1: web_scraper.scrape_chords_from_web()
+                -> I/O bound, Selenium/requests ile ağ bekleniyor
+        Thread-2: audio_to_midi() + clean_midi_drums()
+                -> CPU bound, ancak TensorFlow GIL'i serbest bırakır
+    
+    Bu yapı sayesinde toplam süre, iki işlemden uzun olanınki kadardır. Tipik kazanc: ~40-60 sn.
+    """
+
+    print('=' * 70)
+    print(f'HarmonAI (ASYNC) Başlatılıyor: {artist_name} - {song_title}')
+    print('=' * 70)
+
+    output_folder = 'analyzed_songs'
+    os.makedirs(output_folder, exist_ok=True)
+
+    # ADIM 1: Ses Dosyasını Hazırla 
+    # YouTube indirme veya yerel dosya doğrulaması burada yapılır. Bu adım bitmeden paralel blok başlatılamaz.
+
+    wav_path = None
+    if 'http' in url_or_path:
+        wav_path, _ = audio_core.process_youtube_link(url_or_path, output_folder)
+    else:
+        if os.path.exists(url_or_path):
+            wav_path = url_or_path
+        else:
+            print('Dosya bulunamadı.')
+            return
+
+    if not wav_path:
+        print('Ses dosyası hazirlanamadı, işlem iptal.')
+        return
+
+    # ADIM 2 ve 3: PARALEL CALISMA BLOGU 
+    # ThreadPoolExecutor(max_workers=2) ile iki bağımsız görev aynı anda başlatılır. Her biri ayrı bir thread'de yurutulur:
+    #   web_gelecek  -> scrape_chords_from_web() sonucunu tutan Future
+    #   midi_gelecek -> _midi_donusum_pipeline() sonucunu tutan Future
+    # İki .result() cağrısı, ilgili thread tamamlanana kadar bekler. Hangisi önce biterse diğeri devam ederken o sonucu hemen döndürür.
+
+    print('\n Paralel işlemler başlatılıyor (2 iş parçacığı):')
+    print('   -> [Thread 1] Web İstihbarati (I/O Bound)  : scrape_chords_from_web()')
+    print('   -> [Thread 2] MIDI DÖnüşümü  (CPU Bound)   : audio_to_midi() + clean_midi_drums()')
+    print('-' * 70)
+
+    t_baslangic = time.perf_counter()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        # Thread 1: Web scraping - Selenium ile akor sitesinden veri çekme
+        web_gelecek = executor.submit(
+            web_scraper.scrape_chords_from_web,
+            artist_name,
+            song_title
+        )
+
+        # Thread 2: MIDI pipeline - Basic Pitch donusumu + davul temizleme
+        midi_gelecek = executor.submit(
+            _midi_donusum_pipeline,
+            wav_path,
+            output_folder
+        )
+
+        # Her iki sonucu topla: thread bitene kadar bu satırlar bloklanır.
+        web_chords = web_gelecek.result()   # Web scraping sonucu
+        clean_midi = midi_gelecek.result()  # Davulsuz MIDI yolu
+
+    t_bitis = time.perf_counter()
+    print(f'\n Her iki paralel işlem tamamlandı. Toplam süre: {t_bitis - t_baslangic:.1f}s')
+
+    if not clean_midi:
+        print('MIDI dönüşümü başarısız oldu, işlem iptal.')
+        return
+
+    # ADIM 4: Matematiksel Analiz 
+    # clean_midi (Thread 2'den) ve web_chords (Thread 1'den) hazır hale geldi. Artık ton, tempo ve akor analizi yapılır.
+
+    print('\n Matematiksel Analiz Başlıyor.')
+    pm = pretty_midi.PrettyMIDI(clean_midi)
+
+    # Ortalama chroma vektorunden ton ve mod tespiti (Pearson korelasyonu)
+    chroma_avg = pm.get_chroma().mean(axis=1)
+    detected_key, detected_mode = math_theory.estimate_mode_v3(chroma_avg)
+
+    # WAV dosyasindan hassas tempo tespiti (librosa beat tracking, ilk 60sn)
+    tempo = math_theory.get_accurate_tempo(wav_path)
+
+    # Saniyede 2 örnekle chroma zaman serisi -> akor dizisi
+    chroma_full = pm.get_chroma(fs=2)
+    chord_seq = []
+    for i in range(chroma_full.shape[1]):
+        c = math_theory.identify_complex_chord(
+            chroma_full[:, i],
+            detected_key=detected_key,
+            detected_mode=detected_mode
+        )
+        if c:
+            chord_seq.append(c)
+
+    # Gürültü filtresi: toplam sürenin %2'sinden az görünen akorları gözardı et
+    chord_counts = collections.Counter(chord_seq)
+    threshold = len(chord_seq) * 0.02
+    final_chords = [c for c, count in chord_counts.most_common(12) if count > threshold]
+
+    # Filtre çok katıysa ve hiç akor kalmadiysa en az 4 akor garanti et
+    if not final_chords:
+        final_chords = [c[0] for c in chord_counts.most_common(4)]
+
+    print(f'   => Bulunan Ton    : {detected_key} {detected_mode}')
+    print(f'   => Tempo          : {int(tempo)} BPM')
+    print(f'   => Audio Akorlar  : {final_chords}')
+
+    # Web sonuçlarını da raporla (Thread 1 tarafindan paralelde hazirlanmıştı)
+    if web_chords.get('success'):
+        print(f"   => Web Akorları   : {web_chords['unique_chords']}")
+        print(f"   => Web Kaynak     : {web_chords.get('source_url', '?')}")
+    else:
+        print(f"   => Web Sonucu     : Bulunamadı ({web_chords.get('error', 'bilinmeyen hata')})")
+
+    # ADIM 5: LLM RAPORU
+    # Hem web_chords (Thread 1) hem audio_data_packet (ADIM 4) hazır hale geldi. Artık generate_music_report() her iki kaynağı birleştirerek rapor uretir.
+
+    audio_data_packet = {
+        'name':   f'{artist_name} - {song_title}',
+        'key':    detected_key,
+        'mode':   detected_mode,
+        'tempo':  tempo,
+        'chords': final_chords
+    }
+
+    final_report = llm_agent.generate_music_report(audio_data_packet, web_chords)
+
+    print('\n' + '=' * 70)
+    print('HARMONAI FINAL RAPORU [ASYNC]')
+    print('=' * 70)
+    print(final_report)
+
+    return {
+        "final_report": final_report,
+        "detected_key": detected_key,
+        "detected_mode": detected_mode,
+        "tempo": tempo,
+        "final_chords": final_chords,
+        "web_chords": web_chords
+    }
