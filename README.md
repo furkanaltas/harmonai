@@ -109,7 +109,7 @@ harmonai/
 ## Geliştirici
 
 **Furkan Altaş** — Ege Üniversitesi Matematik Bölümü  
-Bitirme tezi projesi · 2025
+Bitirme tezi projesi · 2026
 
 ---
 
