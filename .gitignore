@@ -51,6 +51,7 @@ auto_builder.log
 
 # Claude Code
 .claude/
+TODO.md
 
 # OS
 .DS_Store
@@ -65,3 +66,5 @@ desktop.ini
 *.h5
 *.pkl
 *.joblib
+
+
