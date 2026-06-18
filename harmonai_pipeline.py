@@ -254,12 +254,12 @@ def run_harmonai_pipeline_fast(url_or_path: str, artist_name: str, song_title: s
         if os.path.exists(url_or_path):
             wav_path = url_or_path
         else:
-            print('Dosya bulunamadı.')
-            return None
+            print('[HATA] Dosya bulunamadı.')
+            return {"error": f"Dosya bulunamadı: {url_or_path}"}
 
     if not wav_path:
-        print('Ses dosyası hazırlanamadı, işlem iptal.')
-        return None
+        print('[HATA] YouTube indirme başarısız.')
+        return {"error": "YouTube'dan ses indirilemedi. Linki kontrol et veya başka bir video dene."}
 
     # ADIM 2: Paralel — web scraping + librosa analizi
     print('\n Paralel işlemler başlatılıyor:')
@@ -288,8 +288,8 @@ def run_harmonai_pipeline_fast(url_or_path: str, artist_name: str, song_title: s
     print(f'\n Paralel işlem tamamlandı. Toplam süre: {t_bitis - t_baslangic:.1f}s')
 
     if analiz.get("error"):
-        print(f'Analiz hatası: {analiz["error"]}')
-        return None
+        print(f'[HATA] fast_analyzer: {analiz["error"]}')
+        return {"error": f"Ses analizi başarısız: {analiz['error']}"}
 
     detected_key   = analiz["key"]
     detected_mode  = analiz["mode"]

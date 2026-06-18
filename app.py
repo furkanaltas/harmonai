@@ -134,14 +134,24 @@ if run:
         st.warning("Please fill in all fields before running the analysis.")
     else:
         sure_tahmini = "~10 seconds" if analiz_modu == "fast" else "~2-3 minutes"
+        hata_detay = None
         with st.spinner(f"Running analysis ({sure_tahmini})..."):
-            if analiz_modu == "fast":
-                sonuc = run_harmonai_pipeline_fast(youtube_url, artist_name, song_title, language)
-            else:
-                sonuc = run_harmonai_pipeline_async(youtube_url, artist_name, song_title)
+            try:
+                if analiz_modu == "fast":
+                    sonuc = run_harmonai_pipeline_fast(youtube_url, artist_name, song_title, language)
+                else:
+                    sonuc = run_harmonai_pipeline_async(youtube_url, artist_name, song_title)
+            except Exception as e:
+                sonuc = None
+                hata_detay = str(e)
 
-        if sonuc is None:
-            st.error("Analysis failed. Check the YouTube link or song details and try again.")
+        basarisiz = sonuc is None or (isinstance(sonuc, dict) and "error" in sonuc and "final_report" not in sonuc)
+
+        if basarisiz:
+            mesaj = sonuc.get("error") if isinstance(sonuc, dict) else None
+            st.error(mesaj or "Analysis failed. Check the YouTube link or song details and try again.")
+            if hata_detay:
+                st.exception(hata_detay)
         else:
             st.success("Analysis complete.")
 
