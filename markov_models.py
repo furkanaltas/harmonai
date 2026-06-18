@@ -166,17 +166,8 @@ def plotTransitionHeatmap(matrix, title: str = "", vmax: float | None = None, fi
     plt.show()
 
 
-def getTurkishModeTransitionProfile(matrix, mod_chords: list[str]) -> pd.DataFrame:
-    # Türk makam akorları listesine göre geçiş alt-matrisini döndürür. Verilen akorlar matriste bulunmazsa hata verir.
-    df = _toDataFrame(matrix)
-    mevcut = [c for c in mod_chords if c in df.index]
-    if not mevcut:
-        raise ValueError("Verilen mod_chords listesindeki akorlar matriste bulunamadı.")
-    return df.loc[mevcut, mevcut]
-
-
-def getWesternModeTransitionProfile(matrix, mod_chords: list[str]) -> pd.DataFrame:
-    # Batı mod akorları listesine göre geçiş alt-matrisini döndürür. Verilen akorlar matriste bulunmazsa hata verir.
+def getModeTransitionProfile(matrix, mod_chords: list[str]) -> pd.DataFrame:
+    """Verilen akor listesine göre geçiş alt-matrisini döndürür (hem TR hem EN için kullanılır)."""
     df = _toDataFrame(matrix)
     mevcut = [c for c in mod_chords if c in df.index]
     if not mevcut:

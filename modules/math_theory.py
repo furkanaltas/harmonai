@@ -1,5 +1,4 @@
 import numpy as np
-import librosa
 from scipy.stats import pearsonr
 import re
 
@@ -121,17 +120,4 @@ def estimate_mode_v3(chroma_vector):
                 
     return best_k, best_m
 
-def get_accurate_tempo(wav_path):
-
-    # Librosa kullanarak ses dosyasından (ilk 60 saniye) hassas tempo ölçümü yapar.
-    
-    try:
-        y, sr = librosa.load(wav_path, sr=None, duration=60)
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        
-        if isinstance(tempo, np.ndarray):
-            return float(tempo[0])
-        return float(tempo)
-    except Exception as e: 
-        print(f"Tempo hesaplama hatası: {e}")
-        return 120.0
+# get_accurate_tempo → modules/audio_core.py'ye taşındı

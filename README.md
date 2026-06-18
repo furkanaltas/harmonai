@@ -1,116 +1,154 @@
-# 🎵 HarmonAI — AI-Powered Musical Harmony Analyzer
+# HarmonAI — AI-Powered Harmonic Analysis System
 
-HarmonAI, bir şarkının YouTube linkinden yola çıkarak müzikal armoni analizini otomatik olarak yapan yapay zeka destekli bir sistemdir.
+HarmonAI is an AI-assisted system that performs automated musical harmony analysis starting from a YouTube link, artist name, and song title. It combines signal processing, music theory mathematics, web scraping, and large language models to produce a comprehensive harmonic report for any given song.
 
-## Ne Yapar?
+## What It Does
 
-Bir YouTube linki, sanatçı adı ve şarkı adı girdiğinde HarmonAI:
+Given a YouTube link, artist name, and song title, HarmonAI:
 
-- Şarkıyı indirir ve ses dosyasına dönüştürür
-- **Paralel olarak** iki bağımsız analiz başlatır:
-  - **Thread 1 — Ses Analizi:** Şarkıyı MIDI formatına çevirir, davul/perküsyon kanallarını temizler, matematiksel yöntemlerle ton, mod ve akor dizisini çıkarır
-  - **Thread 2 — Web Scraping:** Şarkının akorlarını web üzerinden çeker
-- Her iki kaynaktan gelen veriyi birleştirerek Google Gemini ile kapsamlı bir armoni raporu üretir
+- Downloads the audio and converts it to WAV
+- Launches two independent parallel processes:
+  - **Thread 1 — Audio Analysis:** Converts audio to MIDI (via Basic Pitch CNN), removes drum/percussion channels, then extracts key, mode, and chord sequence using cosine similarity and Pearson correlation
+  - **Thread 2 — Web Scraping:** Retrieves chord data for the song from trusted tab/chord websites
+- Merges both sources and generates a structured musicological report via Google Gemini
 
-## Teknik Mimari
+A fast analysis mode is also available (`fast_analyzer.py`) that bypasses MIDI conversion and works directly on the WAV file using librosa, reducing analysis time from ~90s to ~5-10s.
+
+## System Architecture
 
 ```
-[YouTube URL]
-      │
-      ▼
-[Ses İndirme]  ──────────────────────────────┐
-      │                                       │
-      ├──► [Thread 1: MIDI Dönüşüm]          │
-      │         │                             │
-      │    [Davul Temizleme]                  │
-      │         │                             │
-      │    [Ton / Mod / Akor Analizi]         │
-      │                                       │
-      └──► [Thread 2: Web Scraping]           │
-                │                             │
-           [Akor Verisi]                      │
-                │                             │
-                └──────────────┬──────────────┘
-                               ▼
-                        [LLM Raporu]
-                      (Google Gemini)
+[YouTube URL / WAV Path]
+         |
+         v
+  [Audio Download]
+         |
+         |---> [Thread 1: Basic Pitch CNN]
+         |             |
+         |       [Drum Removal]
+         |             |
+         |       [Chroma Extraction]
+         |             |
+         |       [Key / Mode / Chord Detection]
+         |
+         |---> [Thread 2: Web Scraping]
+                       |
+                 [Chord Data]
+                       |
+                       v
+               [Gemini LLM Report]
 ```
 
-**Neden ThreadPoolExecutor?**
-- Web scraping I/O bound (ağ gecikmesi bekleniyor) → thread idealdir
-- Basic Pitch inference sırasında TensorFlow GIL'i serbest bırakır → paralel çalışmaya izin verir
-- İki işlemin toplam süresi, ikisinden uzun olanınki kadardır — tipik kazanç ~40-60 saniye
+**Why ThreadPoolExecutor?**
+- Web scraping is I/O-bound (waiting on network) — threads are ideal
+- TensorFlow (Basic Pitch) releases the GIL during inference — parallel execution is possible
+- Total time equals the duration of the longer task, not the sum — typical gain: 40-60 seconds
 
-## Kullanılan Teknolojiler
+## Core Mathematics
 
-| Alan | Kütüphane |
+| Component | Method |
 |---|---|
-| Ses indirme | `yt-dlp` |
-| Ses analizi | `librosa`, `basic-pitch` |
-| MIDI işleme | `pretty_midi` |
-| Web scraping | `BeautifulSoup`, `Selenium`, `requests` |
-| ML / Matematik | `numpy`, `scipy` |
-| LLM entegrasyonu | `google-genai` (Gemini) |
-| Arayüz | `Streamlit` |
+| Chord detection | Cosine similarity against 108 chord templates (12 roots x 9 types) with Bayesian context bonus |
+| Key / mode detection | Pearson correlation across 10 tonal profiles (Major, Minor, Harmonic Minor, Hicaz, Dorian, Phrygian, Mixolydian, Lydian, Locrian, Melodic Minor) with Z12 cyclic shift |
+| Transition modeling | First-order 108x108 Markov transition matrices |
+| Noise filtering | Dynamic threshold: chords below 5% relative frequency are excluded |
 
-## Kurulum
+## Tech Stack
+
+| Layer | Library |
+|---|---|
+| Audio download | `yt-dlp` |
+| Audio / chroma analysis | `librosa` |
+| MIDI conversion | `basic-pitch` (CNN), `pretty_midi` |
+| Web scraping | `BeautifulSoup`, `Selenium`, `requests` |
+| Mathematics | `numpy`, `scipy`, `scikit-learn` |
+| Database | `sqlite3` (dataset.db) |
+| LLM report | `google-genai` (Gemini 2.5 Flash) |
+| Song list generation | `groq` (Llama 3.3 70B) |
+| UI | `Streamlit` |
+
+## Installation
 
 ```bash
-# Repoyu klonla
 git clone https://github.com/furkanaltas/harmonai.git
 cd harmonai
 
-# Bağımlılıkları yükle
 pip install -r requirements.txt
 
-# API key'ini ayarla
 cp .env.example .env
-# .env dosyasını aç ve GEMINI_API_KEY değerini gir
+# Open .env and fill in your API keys
 ```
 
-## Çalıştırma
+Required keys in `.env`:
+
+```
+GEMINI_API_KEY=...
+GROQ_API_KEY=...
+SPOTIPY_CLIENT_ID=...
+SPOTIPY_CLIENT_SECRET=...
+```
+
+## Running
 
 ```bash
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
-Tarayıcıda arayüz açılır. YouTube linki, sanatçı adı ve şarkı adını gir, analiz başlar.
+The browser interface opens automatically. Enter a YouTube link, artist name, and song title to start the analysis. Select "fast" mode for quick results (~10s) or "full" mode for MIDI-based analysis (~90s).
 
-> ⚠️ Analiz işlemi şarkı uzunluğuna bağlı olarak **2-4 dakika** sürebilir.
+## Dataset Pipeline
 
-## Çıktı Örneği
+HarmonAI includes an automated dataset builder that runs in the background:
 
+```bash
+# Build dataset continuously (target: 2000 songs)
+python auto_builder.py --simdi
+
+# Single batch (25 Turkish + 25 Western)
+python dataset_builder.py
+
+# Label songs with Spotify ground truth
+python spotify_labeler.py
 ```
-Ton       : A Minor
-Tempo     : 124 BPM
-Akorlar   : Am · F · C · G · Em · Dm
-Web Akorları : Am · F · C · G
 
---- HarmonAI Raporu ---
-Bu şarkı La minör tonalitesinde yazılmış olup...
-```
+The pipeline: Groq generates a song list -> yt-dlp downloads audio -> Basic Pitch converts to MIDI -> drums are removed -> saved to `veri_seti/` and indexed in `dataset.db`.
 
-## Proje Yapısı
+## Project Structure
 
 ```
 harmonai/
-├── app.py                  # Streamlit arayüzü
-├── harmonai_pipeline.py    # Ana pipeline (async)
+├── app.py                    # Streamlit UI
+├── harmonai_pipeline.py      # Main pipeline (async + fast modes)
+├── dataset_builder.py        # Automated MIDI dataset builder
+├── auto_builder.py           # Background scheduler for dataset building
+├── spotify_labeler.py        # Spotify API ground truth labeler
+├── markov_models.py          # Markov transition matrix analysis
 ├── modules/
-│   ├── audio_core.py       # Ses indirme, MIDI dönüşüm
-│   ├── math_theory.py      # Ton, mod, akor analizi
-│   ├── web_scraper.py      # Web'den akor çekme
-│   └── llm_agent.py        # Gemini LLM entegrasyonu
+│   ├── audio_core.py         # Audio download, MIDI conversion, tempo detection
+│   ├── math_theory.py        # Chord templates, tonal profiles, detection functions
+│   ├── fast_analyzer.py      # Librosa-based fast analysis (no MIDI)
+│   ├── db_manager.py         # SQLite interface (songs + analyses tables)
+│   ├── web_scraper.py        # Chord scraping from Turkish and Western sites
+│   └── llm_agent.py          # Gemini LLM report generation
+├── dataset.db                # SQLite database (gitignored)
 ├── requirements.txt
 ├── .env.example
 └── .gitignore
 ```
 
-## Geliştirici
+## Output Example
 
-**Furkan Altaş** — Ege Üniversitesi Matematik Bölümü  
-Bitirme tezi projesi · 2025
+```
+Key       : A Minor
+Tempo     : 124 BPM
+Chords    : Am · F · C · G · Em · Dm
+Web       : Am · F · C · G
 
----
+--- HarmonAI Report ---
+This song is written in A minor. The chord progression follows a
+diatonic pattern characteristic of Western tonal music...
+```
 
-*HarmonAI, müzik teorisi ile yapay zekayı birleştirerek şarkıların armonik yapısını matematiksel yöntemlerle analiz eder.*
+## Author
+
+**Furkan Altas** — Ege University, Department of Mathematics
+Graduation thesis project, 2025

@@ -25,7 +25,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from dotenv import load_dotenv
 
-from modules.db_manager import db_init, db_get_or_create_song, db_update_spotify
+from modules.db_manager import db_init, db_get_or_create_song, db_update_spotify, db_song_label
 
 # ── Yapılandırma ──────────────────────────────────────────────────────────────
 
@@ -204,13 +204,9 @@ def etiketle(
 
         # Daha önce başarıyla etiketlenmişse atla
         if not yeniden_etiketle:
-            from modules.db_manager import _baglanti
-            with _baglanti() as con:
-                satir = con.execute(
-                    "SELECT label FROM songs WHERE id = ?", (song_id,)
-                ).fetchone()
-            if satir and satir["label"] != "unknown":
-                print(f"[{idx:>4}/{toplam}] ♻️  Atlandı (zaten etiketli): {dosya_adi[:55]}")
+            mevcut_label = db_song_label(song_id)
+            if mevcut_label and mevcut_label != "unknown":
+                print(f"[{idx:>4}/{toplam}] Atlandı (zaten etiketli): {dosya_adi[:55]}")
                 atlanan += 1
                 continue
 

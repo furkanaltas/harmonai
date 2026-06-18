@@ -17,12 +17,8 @@ Kullanım:
 
 import numpy as np
 import librosa
-from modules.math_theory import (
-    identify_complex_chord,
-    estimate_mode_v3,
-    get_accurate_tempo,
-    NOTE_NAMES,
-)
+from modules.math_theory import identify_complex_chord, estimate_mode_v3
+from modules.audio_core import get_accurate_tempo
 import collections
 
 

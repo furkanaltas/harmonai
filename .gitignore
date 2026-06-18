@@ -1,13 +1,67 @@
+# Environment & Secrets
 .env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Audio & MIDI files (large binaries)
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.midi
+*.mid
+
+# Dataset folders (large, generated locally)
+veri_seti/
 youtube_downloads/
 dataset_temp_audio/
 analyzed_songs/
-veri_seti/
-*.wav
-*.mp3
-*.midi
-*.mid
-.claude/
+
+# Database (locally generated, can be large)
+dataset.db
+dataset.db-shm
+dataset.db-wal
+
+# Logs
+*.log
+auto_builder.log
+
+# IDE & Tools
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# ML model caches
+*.h5
+*.pkl
+*.joblib

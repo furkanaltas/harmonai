@@ -18,6 +18,7 @@ import os
 from modules import llm_agent
 from modules import web_scraper
 from modules import math_theory
+from modules.audio_core import get_accurate_tempo
 from modules import audio_core
 from modules import fast_analyzer
 from modules.db_manager import db_init, db_get_or_create_song, db_save_analysis
@@ -134,7 +135,7 @@ def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: 
     detected_key, detected_mode = math_theory.estimate_mode_v3(chroma_avg)
 
     # WAV dosyasindan hassas tempo tespiti (librosa beat tracking, ilk 60sn)
-    tempo = math_theory.get_accurate_tempo(wav_path)
+    tempo = get_accurate_tempo(wav_path)
 
     # Saniyede 2 örnekle chroma zaman serisi -> akor dizisi
     chroma_full = pm.get_chroma(fs=2)
@@ -180,6 +181,28 @@ def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: 
     }
 
     final_report = llm_agent.generate_music_report(audio_data_packet, web_chords)
+
+    # Analiz sonucunu DB'ye kaydet
+    try:
+        db_init()
+        song_id = db_get_or_create_song(
+            filename=f"{artist_name} - {song_title}",
+            artist=artist_name,
+            title=song_title,
+        )
+        db_save_analysis(
+            song_id=song_id,
+            analyzer="full",
+            detected_key=detected_key,
+            detected_mode=detected_mode,
+            tempo=tempo,
+            chords=final_chords,
+            chord_sequence=chord_seq,
+            web_chords=web_chords,
+        )
+        print("[DB] Analiz kaydedildi.")
+    except Exception as e:
+        print(f"[DB] Kayıt hatası (analiz etkilenmedi): {e}")
 
     print('\n' + '=' * 70)
     print('HARMONAI FINAL RAPORU [ASYNC]')

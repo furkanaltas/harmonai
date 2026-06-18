@@ -167,6 +167,25 @@ def db_save_analysis(
         return cur.lastrowid
 
 
+def db_get_existing_songs() -> list[str]:
+    """
+    DB'deki tüm şarkıları "artist - title" formatında döndürür.
+    Gemini prompt'una geçmek için kullanılır (tekrar üretimi önler).
+    """
+    with _baglanti() as con:
+        satirlar = con.execute(
+            "SELECT artist, title FROM songs WHERE artist != '' AND title != ''"
+        ).fetchall()
+    return [f"{r['artist']} - {r['title']}" for r in satirlar]
+
+
+def db_song_label(song_id: int) -> Optional[str]:
+    """Verilen song_id'nin mevcut Spotify etiketini döndürür. Kayıt yoksa None."""
+    with _baglanti() as con:
+        satir = con.execute("SELECT label FROM songs WHERE id = ?", (song_id,)).fetchone()
+    return satir["label"] if satir else None
+
+
 def db_already_analyzed(song_id: int, analyzer: str) -> bool:
     """Bu şarkı bu analyzer ile daha önce analiz edilmiş mi?"""
     with _baglanti() as con:
@@ -178,6 +197,69 @@ def db_already_analyzed(song_id: int, analyzer: str) -> bool:
 
 
 # ── Özet & Sorgular ───────────────────────────────────────────────────────────
+
+def veri_seti_tara(klasor: str = None) -> None:
+    """
+    veri_seti/ klasöründeki tüm MIDI dosyalarını tarar ve songs tablosuna ekler.
+    Spotify etiketi olmadan sadece filename/artist/title/language/midi_path kaydeder.
+    Zaten kayıtlı dosyalara dokunmaz.
+    """
+    import glob
+    import re
+
+    if klasor is None:
+        klasor = os.path.join(os.path.dirname(__file__), "..", "veri_seti")
+
+    klasor = os.path.abspath(klasor)
+
+    dosyalar = glob.glob(os.path.join(klasor, "**", "*.mid"), recursive=True) + \
+               glob.glob(os.path.join(klasor, "**", "*.midi"), recursive=True)
+    dosyalar = sorted(set(dosyalar))
+
+    if not dosyalar:
+        print(f"[DB] '{klasor}' içinde MIDI dosyası bulunamadı.")
+        return
+
+    db_init()
+    eklenen = atlanan = 0
+
+    for dosya_yolu in dosyalar:
+        dosya_adi = os.path.basename(dosya_yolu)
+
+        # Klasör adından dil tespiti
+        klasor_adi = os.path.basename(os.path.dirname(dosya_yolu)).lower()
+        if "türkçe" in klasor_adi or "turkce" in klasor_adi:
+            dil = "tr"
+        elif "yabancı" in klasor_adi or "yabanci" in klasor_adi:
+            dil = "en"
+        else:
+            dil = "unknown"
+
+        # Dosya adından sanatçı ve şarkı ayrıştır
+        stem = re.sub(r'_davulsuz.*$', '', os.path.splitext(dosya_adi)[0], flags=re.IGNORECASE).strip()
+        parcalar = stem.split('-', 1)
+        artist = parcalar[0].strip() if len(parcalar) == 2 else ""
+        title  = parcalar[1].strip() if len(parcalar) == 2 else stem
+
+        with _baglanti() as con:
+            mevcut = con.execute("SELECT id FROM songs WHERE filename = ?", (dosya_adi,)).fetchone()
+
+        if mevcut:
+            atlanan += 1
+            continue
+
+        db_get_or_create_song(
+            filename=dosya_adi,
+            artist=artist,
+            title=title,
+            language=dil,
+            midi_path=dosya_yolu,
+        )
+        eklenen += 1
+        print(f"[DB] Eklendi [{dil.upper()}]: {artist} - {title}")
+
+    print(f"\n[DB] Tarama tamamlandı — Eklenen: {eklenen}, Zaten kayıtlı: {atlanan}")
+
 
 def db_summary() -> None:
     """Konsola veritabanı özetini basar."""

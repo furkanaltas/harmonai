@@ -4,6 +4,8 @@ import glob
 import contextlib
 import io
 import pretty_midi
+import numpy as np
+import librosa
 from yt_dlp import YoutubeDL
 
 os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '3')
@@ -124,3 +126,14 @@ def clean_midi_drums(midi_path):
     except Exception as e:
         print(f"❌ MIDI Temizleme Hatası: {e}")
         return midi_path
+
+
+def get_accurate_tempo(wav_path: str) -> float:
+    """WAV dosyasından (ilk 60 saniye) beat tracking ile tempo ölçer."""
+    try:
+        y, sr = librosa.load(wav_path, sr=None, duration=60)
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        return float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
+    except Exception as e:
+        print(f"Tempo hesaplama hatası: {e}")
+        return 120.0
