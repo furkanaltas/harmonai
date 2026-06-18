@@ -15,6 +15,11 @@ import time
 import pretty_midi
 import collections
 import os
+import sys
+
+# Windows terminali cp1254 kullanır; Gemini raporundaki Unicode semboller patlatır.
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ('utf-8', 'utf8'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 from modules import llm_agent
 from modules import web_scraper
 from modules import math_theory
