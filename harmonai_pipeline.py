@@ -18,8 +18,11 @@ import os
 import sys
 
 # Windows terminali cp1254 kullanır; Gemini raporundaki Unicode semboller patlatır.
-if sys.stdout.encoding and sys.stdout.encoding.lower() not in ('utf-8', 'utf8'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 from modules import llm_agent
 from modules import web_scraper
 from modules import math_theory
@@ -212,7 +215,7 @@ def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: 
     print('\n' + '=' * 70)
     print('HARMONAI FINAL RAPORU [ASYNC]')
     print('=' * 70)
-    print(final_report)
+    print(final_report.encode('utf-8', errors='replace').decode('utf-8'))
 
     return {
         "final_report": final_report,
@@ -339,7 +342,7 @@ def run_harmonai_pipeline_fast(url_or_path: str, artist_name: str, song_title: s
     print('\n' + '=' * 70)
     print('HARMONAI FINAL RAPORU [FAST]')
     print('=' * 70)
-    print(final_report)
+    print(final_report.encode('utf-8', errors='replace').decode('utf-8'))
 
     return {
         "final_report":   final_report,

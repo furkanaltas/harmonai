@@ -1,6 +1,9 @@
 import sys
-if sys.stdout.encoding and sys.stdout.encoding.lower() not in ('utf-8', 'utf8'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 import streamlit as st
 from harmonai_pipeline import run_harmonai_pipeline_async, run_harmonai_pipeline_fast
