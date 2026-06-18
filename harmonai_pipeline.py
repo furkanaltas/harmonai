@@ -259,7 +259,15 @@ def run_harmonai_pipeline_fast(url_or_path: str, artist_name: str, song_title: s
 
     if not wav_path:
         print('[HATA] YouTube indirme başarısız.')
-        return {"error": "YouTube'dan ses indirilemedi. Linki kontrol et veya başka bir video dene."}
+        return {
+            "error": (
+                "YouTube'dan ses indirilemedi.\n\n"
+                "Olası sebepler:\n"
+                "• Arka planda auto_builder çalışıyorsa YouTube rate-limit uygular — durdurup tekrar dene\n"
+                "• Video bölge kısıtlamalı veya kaldırılmış\n"
+                "• YouTube bot koruması tetiklendi — birkaç dakika bekle veya VPN aç"
+            )
+        }
 
     # ADIM 2: Paralel — web scraping + librosa analizi
     print('\n Paralel işlemler başlatılıyor:')

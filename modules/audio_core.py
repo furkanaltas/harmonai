@@ -41,10 +41,10 @@ def process_youtube_link(url, output_folder="youtube_downloads"):
             'preferredquality': '192'
         }],
         'outtmpl': os.path.join(output_folder, '%(title)s.%(ext)s'),
-        'quiet': True, 
-        'no_warnings': True
+        'quiet': False,
+        'no_warnings': False,
     }
-    
+
     try:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -52,9 +52,17 @@ def process_youtube_link(url, output_folder="youtube_downloads"):
             wav_path = f"{base}.wav"
             sarki_adi = info.get('title', 'Bilinmeyen_Sarki')
             return wav_path, sarki_adi
-            
-    except Exception as e: 
-        print(f" YouTube İndirme Hatası: {e}")
+
+    except Exception as e:
+        hata = str(e)
+        if 'HTTP Error 429' in hata or 'Too Many Requests' in hata:
+            print(f"[HATA] YouTube rate limit (429) — çok fazla istek yapıldı. Birkaç dakika bekle.")
+        elif 'Sign in' in hata or 'bot' in hata.lower():
+            print(f"[HATA] YouTube bot koruması tetiklendi. VPN dene veya bekle.")
+        elif 'available' in hata.lower() or 'blocked' in hata.lower():
+            print(f"[HATA] Video bölge kısıtlamalı veya kaldırılmış.")
+        else:
+            print(f"[HATA] YouTube indirme: {hata}")
         return None, None
 
 def audio_to_midi(wav_path, output_folder):
