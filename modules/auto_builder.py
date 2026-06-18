@@ -33,6 +33,11 @@ import os
 
 import schedule
 
+# modules/ klasöründen çalıştırıldığında proje kökünü path'e ekle
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 # ── Logger ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +45,7 @@ logging.basicConfig(
     datefmt='%H:%M:%S',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("auto_builder.log", encoding="utf-8"),
+        logging.FileHandler(os.path.join(_ROOT, "auto_builder.log"), encoding="utf-8"),
     ],
 )
 log = logging.getLogger("auto_builder")
@@ -53,7 +58,7 @@ EN_BATCH_ADET:     int = 7      # Her çalışmada indirilecek EN şarkı sayıs
 BEKLEME_SAAT:      float = 1  # Çalışmalar arası bekleme süresi (saat)
 
 MIN_DISK_GB:       float = 2.0  # Minimum boş disk alanı (GB) — altındaysa dur
-DB_YOLU:           str = os.path.join(os.path.dirname(__file__), "dataset.db")
+DB_YOLU:           str = os.path.join(_ROOT, "dataset.db")
 
 
 # ── Kontroller ────────────────────────────────────────────────────────────────

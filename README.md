@@ -101,13 +101,13 @@ HarmonAI includes an automated dataset builder that runs in the background:
 
 ```bash
 # Build dataset continuously (target: 2000 songs)
-python auto_builder.py --simdi
+python modules/auto_builder.py --simdi
 
 # Single batch (25 Turkish + 25 Western)
 python dataset_builder.py
 
 # Label songs with Spotify ground truth
-python spotify_labeler.py
+python modules/spotify_labeler.py
 ```
 
 The pipeline: Groq generates a song list -> yt-dlp downloads audio -> Basic Pitch converts to MIDI -> drums are removed -> saved to `veri_seti/` and indexed in `dataset.db`.
@@ -116,20 +116,20 @@ The pipeline: Groq generates a song list -> yt-dlp downloads audio -> Basic Pitc
 
 ```
 harmonai/
-├── app.py                    # Streamlit UI
-├── harmonai_pipeline.py      # Main pipeline (async + fast modes)
-├── dataset_builder.py        # Automated MIDI dataset builder
-├── auto_builder.py           # Background scheduler for dataset building
-├── spotify_labeler.py        # Spotify API ground truth labeler
-├── markov_models.py          # Markov transition matrix analysis
+├── app.py                      # Streamlit UI
+├── harmonai_pipeline.py        # Main pipeline (async + fast modes)
+├── dataset_builder.py          # Automated MIDI dataset builder
 ├── modules/
-│   ├── audio_core.py         # Audio download, MIDI conversion, tempo detection
-│   ├── math_theory.py        # Chord templates, tonal profiles, detection functions
-│   ├── fast_analyzer.py      # Librosa-based fast analysis (no MIDI)
-│   ├── db_manager.py         # SQLite interface (songs + analyses tables)
-│   ├── web_scraper.py        # Chord scraping from Turkish and Western sites
-│   └── llm_agent.py          # Gemini LLM report generation
-├── dataset.db                # SQLite database (gitignored)
+│   ├── audio_core.py           # Audio download, MIDI conversion, tempo detection
+│   ├── math_theory.py          # Chord templates, tonal profiles, detection functions
+│   ├── fast_analyzer.py        # Librosa-based fast analysis (no MIDI)
+│   ├── db_manager.py           # SQLite interface (songs + analyses tables)
+│   ├── web_scraper.py          # Chord scraping from Turkish and Western sites
+│   ├── llm_agent.py            # Gemini LLM report generation
+│   ├── markov_models.py        # Markov transition matrix analysis
+│   ├── auto_builder.py         # Background scheduler for dataset building
+│   └── spotify_labeler.py      # Spotify API ground truth labeler
+├── dataset.db                  # SQLite database (gitignored)
 ├── requirements.txt
 ├── .env.example
 └── .gitignore

@@ -29,7 +29,8 @@ from modules.db_manager import db_init, db_get_or_create_song, db_update_spotify
 
 # ── Yapılandırma ──────────────────────────────────────────────────────────────
 
-VARSAYILAN_KLASOR: str = os.path.join(os.path.dirname(__file__), "veri_seti")
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VARSAYILAN_KLASOR: str = os.path.join(_ROOT, "veri_seti")
 
 PITCH_CLASS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 MOD_ADI = {0: "minor", 1: "major"}
