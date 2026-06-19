@@ -151,4 +151,4 @@ diatonic pattern characteristic of Western tonal music...
 ## Author
 
 **Furkan Altas** — Ege University, Department of Mathematics
-Graduation thesis project, 2025
+Graduation thesis project, 2026
