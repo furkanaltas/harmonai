@@ -25,11 +25,14 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from dotenv import load_dotenv
 
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 from modules.db_manager import db_init, db_get_or_create_song, db_update_spotify, db_song_label
 
 # ── Yapılandırma ──────────────────────────────────────────────────────────────
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VARSAYILAN_KLASOR: str = os.path.join(_ROOT, "veri_seti")
 
 PITCH_CLASS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -71,11 +74,11 @@ def dosya_ayristry(dosya_yolu: str) -> tuple[str, str]:
 
 def spotify_baglanti() -> Optional[spotipy.Spotify]:
     load_dotenv()
-    client_id     = os.getenv("SPOTIPY_CLIENT_ID")
-    client_secret = os.getenv("SPOTIPY_CLIENT_SECRET")
+    client_id     = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
 
     if not client_id or not client_secret:
-        print("[HATA] SPOTIPY_CLIENT_ID veya SPOTIPY_CLIENT_SECRET .env dosyasında bulunamadı.")
+        print("[HATA] SPOTIFY_CLIENT_ID veya SPOTIFY_CLIENT_SECRET .env dosyasında bulunamadı.")
         return None
 
     try:
@@ -86,6 +89,35 @@ def spotify_baglanti() -> Optional[spotipy.Spotify]:
         return None
 
 
+def _temizle(metin: str) -> str:
+    """Parantez içi, 'feat.', gereksiz noktalama temizler."""
+    metin = re.sub(r'\(.*?\)', '', metin)          # (parantez içi)
+    metin = re.sub(r'\[.*?\]', '', metin)          # [köşeli parantez]
+    metin = re.sub(r'\bfeat\.?\b.*', '', metin, flags=re.IGNORECASE)
+    metin = re.sub(r'\bft\.?\b.*',   '', metin, flags=re.IGNORECASE)
+    return metin.strip(' -_')
+
+
+def _audio_features_al(sp: spotipy.Spotify, track_id: str) -> tuple[Optional[int], Optional[int], str]:
+    time.sleep(API_BEKLEME_SN)
+    ozellikler = sp.audio_features([track_id])
+    if not ozellikler or ozellikler[0] is None:
+        return None, None, "unknown"
+    key  = ozellikler[0]["key"]
+    mode = ozellikler[0]["mode"]
+    if key == -1:
+        return None, None, "unknown"
+    label = f"{PITCH_CLASS[key]}_{MOD_ADI.get(mode, 'unknown')}"
+    return key, mode, label
+
+
+def _ara(sp: spotipy.Spotify, sorgu: str) -> Optional[str]:
+    """Spotify'da arama yapar, ilk track_id'yi döndürür ya da None."""
+    sonuclar = sp.search(q=sorgu, type="track", limit=1, market="TR")
+    parcalar = sonuclar.get("tracks", {}).get("items", [])
+    return parcalar[0]["id"] if parcalar else None
+
+
 def spotify_sorgula(
     sp: spotipy.Spotify,
     artist: str,
@@ -93,52 +125,46 @@ def spotify_sorgula(
 ) -> tuple[Optional[int], Optional[int], str]:
     """
     Spotify'dan (key, mode, label) döndürür.
-    Bulunamazsa (None, None, "unknown") döner.
+    Birden fazla arama stratejisi dener; bulunamazsa (None, None, "unknown") döner.
     """
-    sorgu = f"track:{title}"
-    if artist:
-        sorgu += f" artist:{artist}"
+    artist_temiz = _temizle(artist)
+    title_temiz  = _temizle(title)
 
-    for deneme in range(1, MAX_DENEME + 1):
-        try:
-            sonuclar = sp.search(q=sorgu, type="track", limit=1, market="TR")
-            parcalar = sonuclar.get("tracks", {}).get("items", [])
+    # Strateji sırası: en kısıtlıdan en gevşeğe
+    stratejiler = []
+    if artist_temiz and title_temiz:
+        stratejiler.append(f"track:{title_temiz} artist:{artist_temiz}")
+        stratejiler.append(f"{artist_temiz} {title_temiz}")
+        # Sanatçı-şarkı sırası ters olabilir (bazı dosya adlarında)
+        stratejiler.append(f"track:{artist_temiz} artist:{title_temiz}")
+        stratejiler.append(f"{title_temiz} {artist_temiz}")
+    elif title_temiz:
+        stratejiler.append(f"track:{title_temiz}")
+        stratejiler.append(title_temiz)
 
-            if not parcalar:
-                return None, None, "unknown"
+    for sorgu in stratejiler:
+        for deneme in range(1, MAX_DENEME + 1):
+            try:
+                track_id = _ara(sp, sorgu)
+                if track_id:
+                    return _audio_features_al(sp, track_id)
+                break  # Sonuç yok ama hata da yok → sonraki stratejiye geç
 
-            track_id = parcalar[0]["id"]
-            time.sleep(API_BEKLEME_SN)
+            except spotipy.exceptions.SpotifyException as e:
+                if e.http_status == 429:
+                    bekleme = int(e.headers.get("Retry-After", 10)) if e.headers else 10
+                    print(f"   [Rate Limit] {bekleme}s bekleniyor...")
+                    time.sleep(bekleme)
+                else:
+                    print(f"   [Spotify Hatası] {e.http_status}: {e.msg}")
+                    break
 
-            ozellikler = sp.audio_features([track_id])
-            if not ozellikler or ozellikler[0] is None:
-                return None, None, "unknown"
-
-            key  = ozellikler[0]["key"]    # 0-11
-            mode = ozellikler[0]["mode"]   # 0=minör, 1=majör
-
-            if key == -1:  # Spotify bazen -1 döner (tespit edilemedi)
-                return None, None, "unknown"
-
-            nota = PITCH_CLASS[key]
-            label = f"{nota}_{MOD_ADI.get(mode, 'unknown')}"
-            return key, mode, label
-
-        except spotipy.exceptions.SpotifyException as e:
-            if e.http_status == 429:
-                bekleme = int(e.headers.get("Retry-After", 10)) if e.headers else 10
-                print(f"   [Rate Limit] {bekleme}s bekleniyor...")
-                time.sleep(bekleme)
-            else:
-                print(f"   [Spotify Hatası] {e.http_status}: {e.msg}")
-                return None, None, "unknown"
-
-        except Exception as e:
-            if deneme < MAX_DENEME:
-                time.sleep(deneme * 2)
-            else:
-                print(f"   [Bağlantı Hatası] {e}")
-                return None, None, "unknown"
+            except Exception as e:
+                if deneme < MAX_DENEME:
+                    time.sleep(deneme * 2)
+                else:
+                    print(f"   [Bağlantı Hatası] {e}")
+                    break
 
     return None, None, "unknown"
 

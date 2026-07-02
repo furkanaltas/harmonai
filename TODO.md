@@ -38,8 +38,16 @@ Checklemek için: `- [x]` yap veya Claude'a "bunu tamamla" de.
 
 ---
 
+## İleride Yapılacak (Düşük Öncelik)
+
+- [ ] **JSONB/ARRAY dönüşümü** — `analyses` tablosundaki `chords`, `chord_sequence`, `web_chords` kolonlarını TEXT'ten JSONB'ye çevir. Kazanım: `chords @> '["Am"]'` gibi sorgular yazılabilir. `db_manager.py`'de de `json.dumps()` kaldırılır. Acil değil, şu an TEXT olarak çalışıyor.
+- [ ] **Supabase entegrasyonu** — deploy gerekince `_baglanti()` fonksiyonunu Supabase connection string ile güncelle.
+
+---
+
 ## Tamamlanan
 
+- [x] PostgreSQL geçişi — SQLite'tan PostgreSQL 17'ye taşındı, 1890 şarkı migrate edildi
 - [x] fast_analyzer.py — librosa tabanlı hızlı analiz (~5-10sn)
 - [x] db_manager.py — SQLite iki tablolu şema (songs + analyses)
 - [x] dataset_builder.py — Gemini → YouTube → MIDI otomasyonu

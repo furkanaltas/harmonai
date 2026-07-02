@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+migrate_to_postgres.py
 
 # Python
 __pycache__/

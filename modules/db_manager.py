@@ -1,6 +1,6 @@
 """
-db_manager.py — HarmonAI SQLite Veritabanı Yöneticisi
-=======================================================
+db_manager.py — HarmonAI PostgreSQL Veritabanı Yöneticisi
+==========================================================
 
 Tablo yapısı:
     songs     : Şarkı metadata + Spotify ground truth
@@ -11,57 +11,70 @@ Kullanım:
 """
 
 import json
-import sqlite3
 import os
+import psycopg2
+import psycopg2.extras
 from datetime import datetime
 from typing import Optional
-
-DB_YOLU: str = os.path.join(os.path.dirname(__file__), "..", "dataset.db")
 
 
 # ── Bağlantı ──────────────────────────────────────────────────────────────────
 
-def _baglanti() -> sqlite3.Connection:
-    con = sqlite3.connect(DB_YOLU)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA foreign_keys=ON")
+def _baglanti() -> psycopg2.extensions.connection:
+    con = psycopg2.connect(
+        host="localhost",
+        database="harmonai",
+        user="furkan",
+        password=os.getenv("database_password")
+    )
+    con.autocommit = False
     return con
+
+
+def _cursor(con):
+    return con.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 def db_init() -> None:
     """Tablolar yoksa oluşturur. Varsa dokunmaz."""
-    with _baglanti() as con:
-        con.executescript("""
-            CREATE TABLE IF NOT EXISTS songs (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                filename      TEXT    NOT NULL UNIQUE,
-                artist        TEXT,
-                title         TEXT,
-                language      TEXT    CHECK(language IN ('tr','en','unknown')) DEFAULT 'unknown',
-                midi_path     TEXT,
-                spotify_key   INTEGER,
-                spotify_mode  INTEGER,
-                label         TEXT    DEFAULT 'unknown'
-            );
-
-            CREATE TABLE IF NOT EXISTS analyses (
-                id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                song_id        INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
-                analyzed_at    TEXT    NOT NULL,
-                analyzer       TEXT    CHECK(analyzer IN ('fast','full')) DEFAULT 'fast',
-                detected_key   TEXT,
-                detected_mode  TEXT,
-                tempo          REAL,
-                chords         TEXT,
-                chord_sequence TEXT,
-                web_chords     TEXT,
-                web_source_url TEXT,
-                key_correct    INTEGER CHECK(key_correct IN (0,1))
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_analyses_song_id ON analyses(song_id);
-        """)
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS songs (
+                    id            SERIAL PRIMARY KEY,
+                    filename      TEXT    NOT NULL UNIQUE,
+                    artist        TEXT,
+                    title         TEXT,
+                    language      TEXT    CHECK(language IN ('tr','en','unknown')) DEFAULT 'unknown',
+                    midi_path     TEXT,
+                    spotify_key   INTEGER,
+                    spotify_mode  INTEGER,
+                    label         TEXT    DEFAULT 'unknown'
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS analyses (
+                    id             SERIAL PRIMARY KEY,
+                    song_id        INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+                    analyzed_at    TEXT    NOT NULL,
+                    analyzer       TEXT    CHECK(analyzer IN ('fast','full')) DEFAULT 'fast',
+                    detected_key   TEXT,
+                    detected_mode  TEXT,
+                    tempo          REAL,
+                    chords         TEXT,
+                    chord_sequence TEXT,
+                    web_chords     TEXT,
+                    web_source_url TEXT,
+                    key_correct    INTEGER CHECK(key_correct IN (0,1))
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_analyses_song_id ON analyses(song_id)
+            """)
+    finally:
+        con.close()
     print("[DB] Tablolar hazır.")
 
 
@@ -78,41 +91,50 @@ def db_get_or_create_song(
     Dosya adına göre songs tablosunda satır bul veya oluştur.
     song_id (int) döndürür.
     """
-    with _baglanti() as con:
-        satir = con.execute(
-            "SELECT id FROM songs WHERE filename = ?", (filename,)
-        ).fetchone()
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute("SELECT id FROM songs WHERE filename = %s", (filename,))
+            satir = cur.fetchone()
 
-        if satir:
-            # midi_path güncelle (dosya taşınmış olabilir)
-            con.execute(
-                "UPDATE songs SET midi_path = ?, language = ? WHERE id = ?",
-                (midi_path, language, satir["id"])
+            if satir:
+                cur.execute(
+                    "UPDATE songs SET midi_path = %s, language = %s WHERE id = %s",
+                    (midi_path, language, satir["id"])
+                )
+                return satir["id"]
+
+            cur.execute(
+                """INSERT INTO songs (filename, artist, title, language, midi_path)
+                   VALUES (%s, %s, %s, %s, %s)
+                   RETURNING id""",
+                (filename, artist, title, language, midi_path)
             )
-            return satir["id"]
-
-        cur = con.execute(
-            """INSERT INTO songs (filename, artist, title, language, midi_path)
-               VALUES (?, ?, ?, ?, ?)""",
-            (filename, artist, title, language, midi_path)
-        )
-        return cur.lastrowid
+            return cur.fetchone()["id"]
+    finally:
+        con.close()
 
 
 def db_update_spotify(
     filename: str,
     spotify_key: Optional[int],
-    spotify_mode: Optional[int],
+    spotify_mode: Optional[int],  # artık kullanılmıyor, geriye dönük uyumluluk için tutuldu
     label: str,
 ) -> None:
-    """spotify_labeler.py tarafından çağrılır — Spotify ground truth günceller."""
-    with _baglanti() as con:
-        con.execute(
-            """UPDATE songs
-               SET spotify_key = ?, spotify_mode = ?, label = ?
-               WHERE filename = ?""",
-            (spotify_key, spotify_mode, label, filename)
-        )
+    """Key ve label ile songs tablosunu günceller."""
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute(
+                """UPDATE songs
+                   SET spotify_key = %s, label = %s
+                   WHERE filename = %s""",
+                (spotify_key, label, filename)
+            )
+    finally:
+        con.close()
 
 
 # ── analyses tablosu ──────────────────────────────────────────────────────────
@@ -129,42 +151,45 @@ def db_save_analysis(
 ) -> int:
     """
     Analiz sonucunu kaydeder. Spotify ground truth varsa key_correct hesaplar.
-
     Döndürür: analysis_id (int)
     """
     NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
-    with _baglanti() as con:
-        # Ground truth var mı kontrol et
-        spotify_satir = con.execute(
-            "SELECT spotify_key FROM songs WHERE id = ?", (song_id,)
-        ).fetchone()
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute("SELECT spotify_key FROM songs WHERE id = %s", (song_id,))
+            spotify_satir = cur.fetchone()
 
-        key_correct = None
-        if spotify_satir and spotify_satir["spotify_key"] is not None:
-            spotify_nota = NOTE_NAMES[spotify_satir["spotify_key"]]
-            key_correct = 1 if spotify_nota == detected_key else 0
+            key_correct = None
+            if spotify_satir and spotify_satir["spotify_key"] is not None:
+                spotify_nota = NOTE_NAMES[spotify_satir["spotify_key"]]
+                key_correct = 1 if spotify_nota == detected_key else 0
 
-        cur = con.execute(
-            """INSERT INTO analyses
-               (song_id, analyzed_at, analyzer, detected_key, detected_mode,
-                tempo, chords, chord_sequence, web_chords, web_source_url, key_correct)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                song_id,
-                datetime.now().isoformat(timespec="seconds"),
-                analyzer,
-                detected_key,
-                detected_mode,
-                round(tempo, 2),
-                json.dumps(chords, ensure_ascii=False),
-                json.dumps(chord_sequence[:500], ensure_ascii=False),  # ilk 500 eleman
-                json.dumps(web_chords.get("unique_chords", []), ensure_ascii=False),
-                web_chords.get("source_url"),
-                key_correct,
+            cur.execute(
+                """INSERT INTO analyses
+                   (song_id, analyzed_at, analyzer, detected_key, detected_mode,
+                    tempo, chords, chord_sequence, web_chords, web_source_url, key_correct)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING id""",
+                (
+                    song_id,
+                    datetime.now().isoformat(timespec="seconds"),
+                    analyzer,
+                    detected_key,
+                    detected_mode,
+                    round(tempo, 2),
+                    json.dumps(chords, ensure_ascii=False),
+                    json.dumps(chord_sequence[:500], ensure_ascii=False),
+                    json.dumps(web_chords.get("unique_chords", []), ensure_ascii=False),
+                    web_chords.get("source_url"),
+                    key_correct,
+                )
             )
-        )
-        return cur.lastrowid
+            return cur.fetchone()["id"]
+    finally:
+        con.close()
 
 
 def db_get_existing_songs() -> list[str]:
@@ -172,28 +197,43 @@ def db_get_existing_songs() -> list[str]:
     DB'deki tüm şarkıları "artist - title" formatında döndürür.
     Gemini prompt'una geçmek için kullanılır (tekrar üretimi önler).
     """
-    with _baglanti() as con:
-        satirlar = con.execute(
-            "SELECT artist, title FROM songs WHERE artist != '' AND title != ''"
-        ).fetchall()
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute("SELECT artist, title FROM songs WHERE artist != '' AND title != ''")
+            satirlar = cur.fetchall()
+    finally:
+        con.close()
     return [f"{r['artist']} - {r['title']}" for r in satirlar]
 
 
 def db_song_label(song_id: int) -> Optional[str]:
     """Verilen song_id'nin mevcut Spotify etiketini döndürür. Kayıt yoksa None."""
-    with _baglanti() as con:
-        satir = con.execute("SELECT label FROM songs WHERE id = ?", (song_id,)).fetchone()
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute("SELECT label FROM songs WHERE id = %s", (song_id,))
+            satir = cur.fetchone()
+    finally:
+        con.close()
     return satir["label"] if satir else None
 
 
 def db_already_analyzed(song_id: int, analyzer: str) -> bool:
     """Bu şarkı bu analyzer ile daha önce analiz edilmiş mi?"""
-    with _baglanti() as con:
-        satir = con.execute(
-            "SELECT id FROM analyses WHERE song_id = ? AND analyzer = ?",
-            (song_id, analyzer)
-        ).fetchone()
-    return satir is not None
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute(
+                "SELECT id FROM analyses WHERE song_id = %s AND analyzer = %s",
+                (song_id, analyzer)
+            )
+            return cur.fetchone() is not None
+    finally:
+        con.close()
 
 
 # ── Özet & Sorgular ───────────────────────────────────────────────────────────
@@ -226,7 +266,6 @@ def veri_seti_tara(klasor: str = None) -> None:
     for dosya_yolu in dosyalar:
         dosya_adi = os.path.basename(dosya_yolu)
 
-        # Klasör adından dil tespiti
         klasor_adi = os.path.basename(os.path.dirname(dosya_yolu)).lower()
         if "türkçe" in klasor_adi or "turkce" in klasor_adi:
             dil = "tr"
@@ -235,14 +274,19 @@ def veri_seti_tara(klasor: str = None) -> None:
         else:
             dil = "unknown"
 
-        # Dosya adından sanatçı ve şarkı ayrıştır
         stem = re.sub(r'_davulsuz.*$', '', os.path.splitext(dosya_adi)[0], flags=re.IGNORECASE).strip()
         parcalar = stem.split('-', 1)
         artist = parcalar[0].strip() if len(parcalar) == 2 else ""
         title  = parcalar[1].strip() if len(parcalar) == 2 else stem
 
-        with _baglanti() as con:
-            mevcut = con.execute("SELECT id FROM songs WHERE filename = ?", (dosya_adi,)).fetchone()
+        con = _baglanti()
+        try:
+            with con:
+                cur = _cursor(con)
+                cur.execute("SELECT id FROM songs WHERE filename = %s", (dosya_adi,))
+                mevcut = cur.fetchone()
+        finally:
+            con.close()
 
         if mevcut:
             atlanan += 1
@@ -263,15 +307,31 @@ def veri_seti_tara(klasor: str = None) -> None:
 
 def db_summary() -> None:
     """Konsola veritabanı özetini basar."""
-    with _baglanti() as con:
-        toplam_sarki   = con.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
-        etiketli       = con.execute("SELECT COUNT(*) FROM songs WHERE label != 'unknown'").fetchone()[0]
-        toplam_analiz  = con.execute("SELECT COUNT(*) FROM analyses").fetchone()[0]
-        dogru_tespit   = con.execute(
-            "SELECT ROUND(AVG(key_correct)*100, 1) FROM analyses WHERE key_correct IS NOT NULL"
-        ).fetchone()[0]
-        tr_sayisi = con.execute("SELECT COUNT(*) FROM songs WHERE language='tr'").fetchone()[0]
-        en_sayisi = con.execute("SELECT COUNT(*) FROM songs WHERE language='en'").fetchone()[0]
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute("SELECT COUNT(*) AS n FROM songs")
+            toplam_sarki = cur.fetchone()["n"]
+
+            cur.execute("SELECT COUNT(*) AS n FROM songs WHERE label != 'unknown'")
+            etiketli = cur.fetchone()["n"]
+
+            cur.execute("SELECT COUNT(*) AS n FROM analyses")
+            toplam_analiz = cur.fetchone()["n"]
+
+            cur.execute(
+                "SELECT ROUND(AVG(key_correct::numeric)*100, 1) AS ort FROM analyses WHERE key_correct IS NOT NULL"
+            )
+            dogru_tespit = cur.fetchone()["ort"]
+
+            cur.execute("SELECT COUNT(*) AS n FROM songs WHERE language='tr'")
+            tr_sayisi = cur.fetchone()["n"]
+
+            cur.execute("SELECT COUNT(*) AS n FROM songs WHERE language='en'")
+            en_sayisi = cur.fetchone()["n"]
+    finally:
+        con.close()
 
     print("\n" + "=" * 50)
     print("HarmonAI Veritabanı Özeti")
