@@ -33,6 +33,7 @@ from modules.db_manager import (
     db_random_sample_for_ground_truth,
     db_set_ground_truth,
     db_ground_truth_accuracy,
+    db_ground_truth_rows,
 )
 
 NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -146,15 +147,84 @@ def import_worksheet(path: str) -> None:
     print("=" * 60)
 
 
+def dogruluk_raporu() -> None:
+    """
+    İnsan doğrulamalı şarkılar üzerinde detaylı kalibrasyon raporu:
+      - tam etiket / tonik / mod doğruluğu (ayrı ayrı)
+      - mod confusion matrisi (insan → sistem)
+      - tonik hatalarının yarım-ses mesafe dağılımı (1 = yarım ses kayması)
+    100 şarkılık set tamamlanınca profil kalibrasyonunun ana aracı budur.
+    """
+    db_init()
+    rows = db_ground_truth_rows()
+    if not rows:
+        print("[UYARI] Doğrulanmış kayıt yok.")
+        return
+
+    def _parcala(label: str):
+        if not label or "_" not in label:
+            return None, None
+        k, m = label.split("_", 1)
+        return k, m
+
+    toplam = tonik_dogru = mod_dogru = tam_dogru = 0
+    confusion: dict[tuple, int] = {}
+    mesafeler: dict[int, int] = {}
+
+    for r in rows:
+        sk, sm = _parcala(r["label"])
+        gk, gm = _parcala(r["ground_truth_label"])
+        if gk is None:
+            continue
+        toplam += 1
+
+        if sk == gk:
+            tonik_dogru += 1
+        elif sk in NOTE_NAMES and gk in NOTE_NAMES:
+            fark = (NOTE_NAMES.index(sk) - NOTE_NAMES.index(gk)) % 12
+            mesafe = min(fark, 12 - fark)
+            mesafeler[mesafe] = mesafeler.get(mesafe, 0) + 1
+
+        if sm == gm:
+            mod_dogru += 1
+        else:
+            confusion[(gm, sm)] = confusion.get((gm, sm), 0) + 1
+
+        if r["label"] == r["ground_truth_label"]:
+            tam_dogru += 1
+
+    print("=" * 60)
+    print(f"Ground Truth Detay Raporu ({toplam} kayıt)")
+    print("=" * 60)
+    print(f"Tam etiket doğruluğu : {tam_dogru}/{toplam} (%{tam_dogru/toplam*100:.1f})")
+    print(f"Tonik doğruluğu      : {tonik_dogru}/{toplam} (%{tonik_dogru/toplam*100:.1f})")
+    print(f"Mod doğruluğu        : {mod_dogru}/{toplam} (%{mod_dogru/toplam*100:.1f})")
+
+    if mesafeler:
+        print("\nTonik hata mesafeleri (yarım ses cinsinden):")
+        for mesafe in sorted(mesafeler):
+            not_txt = "  <- yarım ses kayması" if mesafe == 1 else ("  <- relative (m3)" if mesafe == 3 else "")
+            print(f"  {mesafe:>2} yarım ses : {mesafeler[mesafe]} şarkı{not_txt}")
+
+    if confusion:
+        print("\nMod karışıklıkları (insan -> sistem):")
+        for (gm, sm), n in sorted(confusion.items(), key=lambda x: -x[1]):
+            print(f"  {gm or '?':20s} -> {sm or '?':20s} : {n}")
+    print("=" * 60)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Elle ground truth doğrulama aracı")
     parser.add_argument("--export", type=int, metavar="N", help="N adet rastgele şarkıyı CSV'ye aktar")
     parser.add_argument("--import-csv", dest="import_csv", metavar="PATH", help="Doldurulmuş CSV'yi DB'ye işle ve doğruluk raporu al")
+    parser.add_argument("--rapor", action="store_true", help="Doğrulanmış kayıtlar üzerinde detaylı confusion raporu bas")
     args = parser.parse_args()
 
     if args.export:
         export_worksheet(args.export)
     elif args.import_csv:
         import_worksheet(args.import_csv)
+    elif args.rapor:
+        dogruluk_raporu()
     else:
         parser.print_help()

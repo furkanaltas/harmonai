@@ -17,7 +17,13 @@ Kullanım:
 
 import numpy as np
 import librosa
-from modules.math_theory import identify_complex_chord, estimate_mode_v3
+from modules.math_theory import (
+    identify_complex_chord,
+    estimate_mode_v3_adaylar,
+    tie_break_key,
+    weighted_chroma_average,
+    TIE_BREAK_MARGIN,
+)
 from modules.audio_core import get_accurate_tempo
 import collections
 
@@ -45,9 +51,18 @@ def _extract_chroma(wav_path: str, fs: int = _FS) -> np.ndarray:
     WAV dosyasından 12 x T boyutlu kroma matrisi çıkarır.
     hop_length, fs parametresinden hesaplanır (sr / fs).
     """
-    y, sr = librosa.load(wav_path, sr=None, mono=True)
+    # Hız: 22050 Hz mono + ilk 120 sn yeterli — ton/akor yapısı bu pencerede
+    # oturur; tam şarkıyı orijinal örnekleme hızında yüklemek ~2-4x yavaştır.
+    y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=120)
+
+    # Tuning düzeltmesi: A440'tan sapmayı (±yarım ses aralığında) ölçüp kroma
+    # bölmelerini kaydırır. Akortsuz/eski kayıtlarda yarım ses hatasını azaltır.
+    tuning = librosa.estimate_tuning(y=y, sr=sr)
+    if abs(float(tuning)) > 0.1:
+        print(f"[fast_analyzer] Tuning sapması: {float(tuning):+.2f} yarım ses (düzeltildi)")
+
     hop_length = max(1, int(sr / fs))
-    chroma = librosa.feature.chroma_stft(y=y, sr=sr, hop_length=hop_length, norm=2)
+    chroma = librosa.feature.chroma_stft(y=y, sr=sr, hop_length=hop_length, norm=2, tuning=tuning)
     return chroma
 
 
@@ -124,9 +139,23 @@ def analyze_wav_fast(wav_path: str) -> dict:
         print(f"[fast_analyzer] Kroma çıkarılıyor: {wav_path}")
         chroma = _extract_chroma(wav_path)
 
-        # Ton ve mod tespiti (ortalama kroma → Pearson korelasyonu)
-        chroma_avg = chroma.mean(axis=1)
-        key, mode = estimate_mode_v3(chroma_avg)
+        # Ton ve mod tespiti (ortalama kroma → Pearson korelasyonu).
+        # İlk iki aday çok yakınsa (relative major/minor vb.) NÖTR akor
+        # dizisiyle tie-break yapılır — bkz. math_theory.tie_break_key.
+        # Son %15'e 2x ağırlık: şarkı bitişleri tonik kanıtı taşır (kadans önyargısı)
+        chroma_avg = weighted_chroma_average(chroma)
+        adaylar = estimate_mode_v3_adaylar(chroma_avg, top_n=2)
+        if not adaylar:
+            key, mode = "Bilinmiyor", "Bilinmiyor"
+        elif len(adaylar) == 2 and (adaylar[0][2] - adaylar[1][2]) < TIE_BREAK_MARGIN:
+            smoothed = _smooth_chroma(chroma)
+            notr_seq = [
+                c for c in (identify_complex_chord(smoothed[:, t]) for t in range(smoothed.shape[1]))
+                if c
+            ]
+            key, mode = tie_break_key(adaylar, notr_seq)
+        else:
+            key, mode = adaylar[0][0], adaylar[0][1]
         print(f"[fast_analyzer] Ton: {key} {mode}")
 
         # Tempo tespiti (beat tracking, ilk 60sn)

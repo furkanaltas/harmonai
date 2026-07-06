@@ -346,6 +346,22 @@ def db_set_ground_truth(song_id: int, ground_truth_label: str) -> None:
         con.close()
 
 
+def db_ground_truth_rows() -> list[dict]:
+    """İnsan doğrulamalı tüm satırları döndürür (confusion matrix raporu için)."""
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute(
+                """SELECT artist, title, label, ground_truth_label
+                   FROM songs
+                   WHERE ground_truth_label IS NOT NULL"""
+            )
+            return cur.fetchall()
+    finally:
+        con.close()
+
+
 def db_ground_truth_accuracy() -> dict:
     """
     İnsan tarafından doğrulanmış şarkılarda sistem tahmini (label) ile

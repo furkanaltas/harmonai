@@ -30,6 +30,62 @@ Checklemek için: `- [x]` yap veya Claude'a "bunu tamamla" de.
 
 ---
 
+## 🤖 Makine Öğrenmesi Yol Haritası (ML)
+
+> **Altın kural: sistemin kendi ürettiği etiketlerle (self-label) ASLA model eğitme.**
+> Neden: algoritmanın hatalarını "doğru" diye ezberler (label noise / confirmation bias)
+> ve tam korkulan halüsinasyon etkisini yaratır. 1930 otomatik etiket yalnızca
+> keşif/istatistik içindir; eğitim ve değerlendirme SADECE bağımsız etiketlerle yapılır.
+
+- [ ] **SymbTr korpusunu indir ve makam tarafını onunla ölç** *(en yüksek öncelik)*
+  - Ne: MTG (Music Technology Group) SymbTr korpusu — ~2200 Türk makam müziği eseri,
+    uzmanlarca etiketli makam + usul bilgisi. GitHub: `MTG/SymbTr` (ücretsiz, txt/MusicXML/MIDI).
+  - Neden: Türk tarafı için bağımsız, uzman kaynaklı ground truth — Spotify'ın kapattığı
+    boşluğu makamlar için bedavaya kapatır.
+  - Nasıl: (1) repo klonla, (2) SymbTr makam adlarını bizim profillere eşleyen tablo yaz
+    (örn. Hicaz/Hicazkar/Uzzal → Hicaz; Kürdi/Kürdilihicazkar → Phrygian (Kürdi);
+    eşleşmeyenleri "kapsam dışı" işaretle), (3) MIDI'lerini `estimate_mode_v3`'ten geçir,
+    (4) doğruluk + confusion matrix raporla.
+  - Gereken: ~1 gün iş; yeni bağımlılık yok.
+
+- [ ] **Batı tarafı için bağımsız benchmark: GiantSteps Key + Isophonics**
+  - Ne: GiantSteps Key (604 parça, key etiketli — EDM ağırlıklı, tür farkına dikkat) ve
+    Isophonics/Beatles anotasyonları (akor + key, pop/rock — bizim veri setine daha yakın).
+  - Nasıl: ses dosyaları üzerinden fast_analyzer ile key tahmini → etiketle karşılaştır.
+  - Gereken: veri setlerini indirme + küçük eval scripti.
+
+- [ ] **Sabit değerlendirme protokolü (eval scripti)**
+  - Ne: `tools/eval.py` — her matematik değişikliğinden sonra çalıştırılan tek komut.
+  - Metrik: MIREX weighted key score (tam doğru=1.0, beşli komşu=0.5,
+    relative=0.3, parallel=0.2) + mod bazında confusion matrix.
+  - Neden: "değişiklik → ölç → tut/geri al" döngüsünü standartlaştırır
+    (Harmonic Minor düzeltmesi tuttu, ilk tie-break denemesi bu sayede geri alındı).
+
+- [ ] **Klasik ML önce (CRNN'den önce): feature-based sınıflandırıcı**
+  - Ne: Random Forest / Gradient Boosting; öznitelikler = 12-dim ortalama chroma +
+    akor geçiş istatistikleri (Markov satır özetleri) + tempo + akor çeşitliliği.
+  - Eğitim verisi: YALNIZCA SymbTr + GiantSteps/Isophonics (uzman etiketli).
+  - Bizim 100 elle etiketli şarkı: eğitime KARIŞTIRILMAZ — saf test seti olarak kalır.
+  - Ön koşul: eval protokolü hazır + kural tabanlı sistemin tavanı ölçülmüş olmalı.
+
+- [ ] **CRNN (deep learning) — en son adım**
+  - Ön koşullar: (1) >3000 UZMAN etiketli örnek (SymbTr + Batı benchmarkları toplamı),
+    (2) klasik ML denenmiş ve tavana dayanmış, (3) eval altyapısı oturmuş.
+  - Bu koşullar sağlanmadan CRNN'e başlamak = gürültü ezberleyen model.
+
+- [ ] **Veri çarkı (data flywheel): kullanıcı düzeltmeleri**
+  - Ne: Streamlit arayüzüne "Tahmin doğru mu? [Evet/Hayır → doğrusu ne?]" düğmesi.
+  - Düzeltmeler `songs.ground_truth_label` kolonuna yazılır → bağımsız etiket seti
+    kullanıcı kullandıkça büyür.
+  - Gereken: app.py'ye küçük form + mevcut `db_set_ground_truth` fonksiyonu (hazır).
+
+- [ ] **Kalibrasyon ≠ Eğitim ayrımını koru**
+  - Profil katsayısı ayarlama (kalibrasyon) 40-100 etiketle yapılabilir ve yapılıyor.
+  - Model EĞİTİMİ binlerce bağımsız etiket ister. İkisini karıştırma:
+    100 şarkıyla model eğitmeye çalışmak overfitting garantisidir.
+
+---
+
 ## Yeni Özellikler
 
 - [ ] **İki şarkı karşılaştırma** — "Bu iki şarkı harmonik olarak %67 benzer" çıktısı

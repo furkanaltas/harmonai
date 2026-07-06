@@ -10,7 +10,7 @@ Sistem temel olarak 7 katmandan oluşur:
 1. **Veri Girişi & Ön İşleme:** YouTube indirme (yt-dlp) veya MIDI yükleme, perküsyon kanalının (davulların) filtrelenmesi.
 2. **Kroma Özellik Çıkarımı:** STFT ile 12 boyutlu kroma vektörlerinin oluşturulması (`librosa` / `pretty_midi`).
 3. **Akor Sınıflandırma:** 108 sınıflı (12 kök x 9 tür) akor sözlüğü, Kosinüs Benzerliği ve Bayesyen bağlam bonusu (+0.15) kullanılarak akor tespiti.
-4. **Ton/Makam Tespiti:** Hicaz ve Kürdi gibi Türk makamlarını içeren 10 özel Tonal Hiyerarşi profili ile Pearson korelasyonu kullanılarak (Z12 döngüsel kaydırma / tonal normalizasyon) ton tespiti.
+4. **Ton/Makam Tespiti:** Hicaz ve Kürdi gibi Türk makamlarını içeren 9 özel Tonal Hiyerarşi profili ile Pearson korelasyonu (Z12 döngüsel kaydırma); ilk iki aday çok yakınsa nötr akor dizisi kanıtlarıyla tie-break (Locrian, yanlış pozitif ürettiği için Temmuz 2026'da çıkarıldı).
 5. **Markov Modellemesi:** 1. dereceden 108x108 Markov geçiş matrislerinin oluşturulması (`modules/markov_models.py`).
 6. **Veri Zenginleştirme & Etiketleme:** Web scraping (DuckDuckGo, Selenium, BeautifulSoup) ile tab sitelerinden çapraz doğrulama; `modules/midi_labeler.py` ile otomatik key/mode etiketleme; `modules/ground_truth_tool.py` ile kör (blind) elle doğrulama ve doğruluk ölçümü. (NOT: Spotify audio-features API Kasım 2024'te yeni uygulamalara kapatıldı — `spotify_labeler.py` kullanım dışı, yalnızca referans.)
 7. **LLM Raporlama:** Gemini 2.5 Flash API kullanılarak sayısal verilerin akademik bir müzikoloji raporuna dönüştürülmesi; veri seti şarkı listeleri Groq (llama-3.3-70b) ile üretilir.

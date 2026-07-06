@@ -44,8 +44,10 @@ def _midi_donusum_pipeline(wav_path: str, output_folder: str):
     Dondurur: Davulsuz MIDI dosyasinin yolu; hata durumunda None
     """
 
-    # Adim A: WAV -> MIDI donusumu (Basic Pitch CNN inference, ~60-90sn)
-    raw_midi = audio_core.audio_to_midi(wav_path, output_folder)
+    # Adim A: WAV -> MIDI donusumu (Basic Pitch CNN inference)
+    # Hiz: interaktif analizde ilk 120 sn yeterli — ton/akor yapisi bu pencerede
+    # oturur; dataset_builder tam sarkiyi kullanmaya devam eder.
+    raw_midi = audio_core.audio_to_midi(wav_path, output_folder, max_sure_sn=120)
     if not raw_midi:
         return None
 
@@ -136,15 +138,25 @@ async def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_t
     print('\n Matematiksel Analiz Başlıyor.')
     pm = pretty_midi.PrettyMIDI(clean_midi)
 
-    # Ortalama chroma vektorunden ton ve mod tespiti (Pearson korelasyonu)
-    chroma_avg = pm.get_chroma().mean(axis=1)
-    detected_key, detected_mode = math_theory.estimate_mode_v3(chroma_avg)
+    # Ortalama chroma vektorunden ton ve mod tespiti (Pearson korelasyonu).
+    # Ilk iki aday cok yakinsa NOTR akor dizisiyle tie-break yapilir.
+    # Son %15'e 2x agirlik: sarki bitisleri tonik kaniti tasir (kadans onyargisi)
+    chroma_avg = math_theory.weighted_chroma_average(pm.get_chroma())
+    chroma_full = pm.get_chroma(fs=2)
+    adaylar = math_theory.estimate_mode_v3_adaylar(chroma_avg, top_n=2)
+    if len(adaylar) == 2 and (adaylar[0][2] - adaylar[1][2]) < math_theory.TIE_BREAK_MARGIN:
+        notr_seq = [
+            c for c in (math_theory.identify_complex_chord(chroma_full[:, i]) for i in range(chroma_full.shape[1]))
+            if c
+        ]
+        detected_key, detected_mode = math_theory.tie_break_key(adaylar, notr_seq)
+    else:
+        detected_key, detected_mode = (adaylar[0][0], adaylar[0][1]) if adaylar else ("Bilinmiyor", "Bilinmiyor")
 
     # WAV dosyasindan hassas tempo tespiti (librosa beat tracking, ilk 60sn)
     tempo = get_accurate_tempo(wav_path)
 
-    # Saniyede 2 örnekle chroma zaman serisi -> akor dizisi
-    chroma_full = pm.get_chroma(fs=2)
+    # Saniyede 2 örnekle chroma zaman serisi -> akor dizisi (yukarida hesaplandi)
     chord_seq = []
     for i in range(chroma_full.shape[1]):
         c = math_theory.identify_complex_chord(

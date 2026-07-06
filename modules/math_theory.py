@@ -46,7 +46,8 @@ PROFILES_V3 = {
     'Dorian': [6.0, 2.5, 3.5, 5.0, 3.0, 4.0, 3.5, 5.0, 3.0, 4.5, 3.5, 2.5],
     'Phrygian (Kürdi)': [6.0, 5.0, 3.5, 4.5, 3.0, 3.5, 2.5, 5.0, 4.0, 2.5, 3.5, 2.5],
     'Mixolydian': [6.0, 2.0, 3.5, 2.5, 4.5, 4.0, 2.5, 5.0, 2.5, 3.5, 5.0, 2.5],
-    'Locrian': [5.0, 5.0, 3.0, 4.0, 2.0, 5.0, 4.5, 2.0, 4.0, 2.5, 4.0, 3.0],
+    # 'Locrian' çıkarıldı (Temmuz 2026): 40 şarkılık ground truth'ta hiç gerçek
+    # Locrian yokken 2 yanlış pozitif üretti — popüler müzikte fiilen kullanılmaz.
     'Lydian': [5.5, 2.5, 4.0, 3.0, 5.0, 3.5, 5.5, 5.0, 2.5, 4.0, 2.5, 3.0]
 }
 
@@ -100,6 +101,21 @@ def identify_complex_chord(chroma_vector, threshold=0.60, detected_key=None, det
     
     return best_c if max_sim > threshold else None
 
+def weighted_chroma_average(chroma_matrix, son_oran: float = 0.15, son_agirlik: float = 2.0):
+    """
+    12xT kroma matrisinin zaman ekseninde AĞIRLIKLI ortalaması.
+    Son `son_oran`'lık dilim `son_agirlik` kat ağırlık alır — şarkılar ağırlıkla
+    tonikte bittiği için bitiş bölgesi güçlü tonik kanıtı taşır (kadans önyargısı).
+    Düz mean(axis=1) yerine ton tespiti girişinde kullanılır.
+    """
+    T = chroma_matrix.shape[1]
+    if T == 0:
+        return chroma_matrix.sum(axis=1)
+    agirliklar = np.ones(T)
+    agirliklar[int(T * (1.0 - son_oran)):] = son_agirlik
+    return np.average(chroma_matrix, axis=1, weights=agirliklar)
+
+
 def estimate_mode_v3(chroma_vector):
 
     #Şarkının genel kroma ortalamasını alıp Pearson Korelasyonu ile Ton ve Mod tahmini yapar.
@@ -120,5 +136,86 @@ def estimate_mode_v3(chroma_vector):
                 best_m = m_name
                 
     return best_k, best_m
+
+
+# ── Belirsizlik çözümü (tie-break) ────────────────────────────────────────────
+
+# İlk iki adayın Pearson r farkı bu eşiğin altındaysa sonuç "belirsiz" sayılır
+# ve akor kanıtlarıyla tie-break yapılır (relative major/minor vb. durumlar).
+TIE_BREAK_MARGIN: float = 0.02
+
+# Tonik akoru minör üçlü olan modlar (tie-break'te tonik akor kalitesi eşleşmesi için)
+_MINOR_TONIC_MODES = {"Minor", "Harmonic Minor", "Melodic Minor", "Dorian", "Phrygian (Kürdi)"}
+# Hicaz'ın toniği majör üçlüdür (1 - M3 - P5)
+
+
+def estimate_mode_v3_adaylar(chroma_vector, top_n: int = 2) -> list[tuple[str, str, float]]:
+    """
+    estimate_mode_v3 ile aynı taramayı yapar ama tek kazanan yerine
+    en iyi top_n (key, mode, pearson_r) adayını skor sırasıyla döndürür.
+    Boş/sessiz vektörde boş liste döner.
+    """
+    if np.sum(chroma_vector) == 0:
+        return []
+
+    norm = chroma_vector / (np.max(chroma_vector) + 1e-10)
+    skorlar: list[tuple[str, str, float]] = []
+    for i in range(12):
+        shifted = np.roll(norm, -i)
+        for m_name, m_prof in PROFILES_V3.items():
+            r, _ = pearsonr(shifted, m_prof)
+            skorlar.append((NOTE_NAMES[i], m_name, float(r)))
+
+    skorlar.sort(key=lambda s: s[2], reverse=True)
+    return skorlar[:top_n]
+
+
+def _tonik_akorlari(key: str, mode: str) -> set[str]:
+    if mode in _MINOR_TONIC_MODES:
+        return {f"{key}m", f"{key}m7"}
+    return {key, f"{key}maj7"}
+
+
+def tie_break_key(adaylar: list[tuple[str, str, float]], chord_seq: list[str]) -> tuple[str, str]:
+    """
+    İlk iki aday çok yakınsa (margin < TIE_BREAK_MARGIN), NÖTR akor dizisindeki
+    kanıtlarla seçim yapar. ÖNEMLİ: chord_seq, tonalite bonusu OLMADAN
+    (identify_complex_chord'a detected_key/mode verilmeden) üretilmiş olmalı —
+    aksi halde tie-break kendi önyargısını doğrular (önceki başarısız denemenin dersi).
+
+    Kanıtlar:
+      + tonik akor sıklığı (aday moda uygun kalitede: Am vs A)
+      + son akor tonik mi (şarkılar ağırlıkla tonikte biter — güçlü sinyal)
+      + minör-tonikli aday için dominantta MAJÖR akor (yükseltilmiş 7. derece)
+
+    Belirsizlik yoksa veya kanıt eşitse ilk adayı (kroma kazananını) korur.
+    """
+    if not adaylar:
+        return "Bilinmiyor", "Bilinmiyor"
+    if len(adaylar) < 2 or not chord_seq:
+        return adaylar[0][0], adaylar[0][1]
+
+    (k1, m1, r1), (k2, m2, r2) = adaylar[0], adaylar[1]
+    if (r1 - r2) >= TIE_BREAK_MARGIN:
+        return k1, m1
+
+    def _kanit_skoru(key: str, mode: str) -> float:
+        tonikler = _tonik_akorlari(key, mode)
+        skor = float(sum(1 for c in chord_seq if c in tonikler))
+        if chord_seq[-1] in tonikler:
+            skor += 5.0
+        if mode in _MINOR_TONIC_MODES:
+            dom = NOTE_NAMES[(NOTE_NAMES.index(key) + 7) % 12]
+            dom_major = sum(1 for c in chord_seq if c in {dom, f"{dom}7"})
+            dom_minor = sum(1 for c in chord_seq if c in {f"{dom}m", f"{dom}m7"})
+            if dom_major > dom_minor and dom_major > 0:
+                skor += 3.0
+        return skor
+
+    s1, s2 = _kanit_skoru(k1, m1), _kanit_skoru(k2, m2)
+    if s2 > s1:
+        print(f"[math_theory] Tie-break: {k1} {m1} (r={r1:.3f}) yerine {k2} {m2} (r={r2:.3f}) seçildi (kanıt {s2:.0f} vs {s1:.0f}).")
+        return k2, m2
+    return k1, m1
 
 # get_accurate_tempo → modules/audio_core.py'ye taşındı

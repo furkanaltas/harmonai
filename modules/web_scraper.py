@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 
 PREFERRED_BROWSER: str = 'chrome'
-_BROWSER_FALLBACK_ORDER: list[str] = ['chrome', 'firefox', 'opera', 'requests']
+_BROWSER_FALLBACK_ORDER: list[str] = ['requests', 'chrome', 'firefox', 'opera']
 
 _ROOTS = [
     'C#', 'Db', 'D#', 'Eb', 'F#', 'Gb', 'G#', 'Ab', 'A#', 'Bb',
@@ -364,8 +364,10 @@ def scrape_chords_from_web(artist: str, song_name: str, language: str = "tr") ->
             f"{artist} {song_name} akor",
         ]
 
-    browser_order = [PREFERRED_BROWSER] + [
-        b for b in _BROWSER_FALLBACK_ORDER if b != PREFERRED_BROWSER
+    # Hız: önce hafif requests (~1sn) denenir; Selenium (~5-8sn tarayıcı açılışı)
+    # yalnızca requests sonuç bulamazsa devreye girer.
+    browser_order = ['requests', PREFERRED_BROWSER] + [
+        b for b in _BROWSER_FALLBACK_ORDER if b not in ('requests', PREFERRED_BROWSER)
     ]
 
     found_url: str | None = None

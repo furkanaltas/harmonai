@@ -58,7 +58,7 @@ with contextlib.redirect_stderr(io.StringIO()):
     from basic_pitch.inference import predict_and_save
     from basic_pitch import ICASSP_2022_MODEL_PATH
 
-from modules.audio_core import clean_midi_drums
+from modules.audio_core import clean_midi_drums, BP_MODEL_PATH
 from modules.db_manager import db_init, db_get_or_create_song, db_get_existing_songs, db_song_exists
 
 # ── Yapılandırma ──────────────────────────────────────────────────────────────
@@ -276,7 +276,7 @@ def _wav_to_midi(wav_yolu: str) -> Optional[str]:
                 sonify_midi=False,
                 save_model_outputs=False,
                 save_notes=False,
-                model_or_model_path=ICASSP_2022_MODEL_PATH,
+                model_or_model_path=BP_MODEL_PATH,
             )
     except Exception as e:
         if "already exists" in str(e):

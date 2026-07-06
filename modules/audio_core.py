@@ -22,6 +22,14 @@ with contextlib.redirect_stderr(io.StringIO()):
     from basic_pitch.inference import predict_and_save
     from basic_pitch import ICASSP_2022_MODEL_PATH
 
+# ONNX backend CPU'da TF'den belirgin hızlıdır; model dosyası mevcutsa tercih et.
+try:
+    from basic_pitch import build_icassp_2022_model_path, FilenameSuffix
+    _onnx_yolu = build_icassp_2022_model_path(FilenameSuffix.onnx)
+    BP_MODEL_PATH = _onnx_yolu if os.path.exists(str(_onnx_yolu)) else ICASSP_2022_MODEL_PATH
+except Exception:
+    BP_MODEL_PATH = ICASSP_2022_MODEL_PATH
+
 # SES VE MIDI İŞLEME
 
 def process_youtube_link(url, output_folder="youtube_downloads"):
@@ -65,11 +73,34 @@ def process_youtube_link(url, output_folder="youtube_downloads"):
             print(f"[HATA] YouTube indirme: {hata}")
         return None, None
 
-def audio_to_midi(wav_path, output_folder):
+def _trim_wav(wav_path, output_folder, max_sure_sn):
+    """Sesin ilk max_sure_sn saniyesini ayrı bir WAV olarak yazar (cache'li).
+    Başarısız olursa None döner ve çağıran tam sesi kullanır."""
+    import soundfile as sf
+    base = os.path.splitext(os.path.basename(wav_path))[0]
+    hedef = os.path.join(output_folder, f"{base}_trim{max_sure_sn}.wav")
+    if os.path.exists(hedef):
+        return hedef
+    try:
+        y, sr = librosa.load(wav_path, sr=None, mono=True, duration=max_sure_sn)
+        sf.write(hedef, y, sr)
+        return hedef
+    except Exception as e:
+        print(f"   [trim] Kırpma başarısız, tam ses kullanılacak: {e}")
+        return None
+
+
+def audio_to_midi(wav_path, output_folder, max_sure_sn=None):
 
     # WAV dosyasını Basic Pitch ile MIDI notalarına çevirir.
+    # max_sure_sn verilirse ses önce o süreye kırpılır (interaktif analizde hız
+    # için; dataset_builder tam şarkıyı kullanır).
 
     print(" Ses MIDI'ye Çevriliyor (Basic Pitch)...")
+    if max_sure_sn:
+        kirpilmis = _trim_wav(wav_path, output_folder, max_sure_sn)
+        if kirpilmis:
+            wav_path = kirpilmis
     base_name = os.path.splitext(os.path.basename(wav_path))[0]
 
     # Basic Pitch çıktı adı deterministiktir: <girdi_adı>_basic_pitch.mid
@@ -88,7 +119,7 @@ def audio_to_midi(wav_path, output_folder):
             sonify_midi=False, 
             save_model_outputs=False, 
             save_notes=False, 
-            model_or_model_path=ICASSP_2022_MODEL_PATH
+            model_or_model_path=BP_MODEL_PATH
         )
     except Exception as e:
         hata_mesaji = str(e)
