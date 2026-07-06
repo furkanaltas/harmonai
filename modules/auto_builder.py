@@ -26,7 +26,6 @@ ARKA PLANDA ÇALIŞTIRMAK (Windows):
 
 import argparse
 import logging
-import sqlite3
 import sys
 import time
 import os
@@ -37,6 +36,8 @@ import schedule
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
+
+from modules.db_manager import db_song_count
 
 # ── Logger ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -58,19 +59,16 @@ EN_BATCH_ADET:     int = 7      # Her çalışmada indirilecek EN şarkı sayıs
 BEKLEME_SAAT:      float = 1  # Çalışmalar arası bekleme süresi (saat)
 
 MIN_DISK_GB:       float = 2.0  # Minimum boş disk alanı (GB) — altındaysa dur
-DB_YOLU:           str = os.path.join(_ROOT, "dataset.db")
 
 
 # ── Kontroller ────────────────────────────────────────────────────────────────
 
 def _mevcut_sarki_sayisi() -> int:
-    """DB'deki toplam şarkı sayısını döndürür. DB yoksa 0."""
-    if not os.path.exists(DB_YOLU):
-        return 0
+    """PostgreSQL'deki toplam şarkı sayısını döndürür. Bağlantı hatasında 0."""
     try:
-        with sqlite3.connect(DB_YOLU) as con:
-            return con.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
-    except Exception:
+        return db_song_count()
+    except Exception as e:
+        log.error(f"DB şarkı sayısı okunamadı ({type(e).__name__}): {e}")
         return 0
 
 

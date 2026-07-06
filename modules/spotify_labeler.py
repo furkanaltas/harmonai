@@ -2,6 +2,12 @@
 spotify_labeler.py — HarmonAI Spotify Veri Etiketleyici
 =========================================================
 
+⚠️ KULLANIM DIŞI (Temmuz 2026): Spotify, audio-features endpoint'ini
+Kasım 2024'ten sonra oluşturulan uygulamalara kapattı (403 Forbidden).
+Bu modül yalnızca referans için tutuluyor. Etiketleme için:
+    python modules/midi_labeler.py          (otomatik key/mode)
+    python modules/ground_truth_tool.py     (elle doğrulama)
+
 AMAÇ:
     veri_seti/ klasöründeki MIDI dosyalarını Spotify API üzerinden
     ton (key) ve mod (mode) bilgileriyle etiketleyip dataset.db'ye kaydeder.

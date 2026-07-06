@@ -1,4 +1,5 @@
 import sys
+import asyncio
 try:
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -138,9 +139,9 @@ if run:
         with st.spinner(f"Running analysis ({sure_tahmini})..."):
             try:
                 if analiz_modu == "fast":
-                    sonuc = run_harmonai_pipeline_fast(youtube_url, artist_name, song_title, language)
+                    sonuc = asyncio.run(run_harmonai_pipeline_fast(youtube_url, artist_name, song_title, language))
                 else:
-                    sonuc = run_harmonai_pipeline_async(youtube_url, artist_name, song_title)
+                    sonuc = asyncio.run(run_harmonai_pipeline_async(youtube_url, artist_name, song_title))
             except Exception as e:
                 sonuc = None
                 hata_detay = str(e)
@@ -151,7 +152,7 @@ if run:
             mesaj = sonuc.get("error") if isinstance(sonuc, dict) else None
             st.error(mesaj or "Analysis failed. Check the YouTube link or song details and try again.")
             if hata_detay:
-                st.exception(hata_detay)
+                st.error(f"Teknik detay: {hata_detay}")
         else:
             st.success("Analysis complete.")
 

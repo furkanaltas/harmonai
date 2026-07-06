@@ -4,13 +4,14 @@
 #       [Indir] -> [Web Scraping] --+
 #                  [MIDI Donusum] --+--> [Analiz] -> [LLM]
 
-# Neden ThreadPoolExecutor?
-#   - Web scraping: I/O bound (Selenium ag gecikmesi bekleniyor) -> thread ideal
-#   - Basic Pitch : TensorFlow inference sirasinda GIL'i serbest birakir
-#     -> ayni surecte baska thread paralel calisabilir
-#   - asyncio yerine thread: mevcut senkron kutuphanelerle (Selenium, requests, pretty_midi) uyumlu olmasi icin thread tercih edildi.
+# Neden asyncio?
+#   - Web scraping (Selenium/requests) ve Basic Pitch/librosa senkron/bloklayici
+#     kutuphaneler oldugundan her biri asyncio.to_thread() ile ayri thread'e
+#     devredilir; event loop bloklanmaz.
+#   - Iki is asyncio.gather() ile paralel calistirilir; toplam sure en uzun
+#     islem kadardir (onceki ThreadPoolExecutor tasarimiyla ayni kazanc).
 
-import concurrent.futures
+import asyncio
 import time
 import pretty_midi
 import collections
@@ -52,7 +53,7 @@ def _midi_donusum_pipeline(wav_path: str, output_folder: str):
     return audio_core.clean_midi_drums(raw_midi)
 
 
-def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: str):
+async def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: str):
     """
     Parametreler:
     url_or_path : YouTube linki veya lokal WAV dosya yolu
@@ -80,18 +81,26 @@ def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: 
     # YouTube indirme veya yerel dosya doğrulaması burada yapılır. Bu adım bitmeden paralel blok başlatılamaz.
 
     wav_path = None
-    if 'http' in url_or_path:
+    if url_or_path.startswith(('http://', 'https://')):
         wav_path, _ = audio_core.process_youtube_link(url_or_path, output_folder)
     else:
         if os.path.exists(url_or_path):
             wav_path = url_or_path
         else:
-            print('Dosya bulunamadı.')
-            return
+            print('[HATA] Dosya bulunamadı.')
+            return {"error": f"Dosya bulunamadı: {url_or_path}"}
 
     if not wav_path:
-        print('Ses dosyası hazirlanamadı, işlem iptal.')
-        return
+        print('[HATA] Ses dosyası hazırlanamadı, işlem iptal.')
+        return {
+            "error": (
+                "YouTube'dan ses indirilemedi.\n\n"
+                "Olası sebepler:\n"
+                "• Arka planda auto_builder çalışıyorsa YouTube rate-limit uygular — durdurup tekrar dene\n"
+                "• Video bölge kısıtlamalı veya kaldırılmış\n"
+                "• YouTube bot koruması tetiklendi — birkaç dakika bekle veya VPN aç"
+            )
+        }
 
     # ADIM 2 ve 3: PARALEL CALISMA BLOGU 
     # ThreadPoolExecutor(max_workers=2) ile iki bağımsız görev aynı anda başlatılır. Her biri ayrı bir thread'de yurutulur:
@@ -106,31 +115,20 @@ def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: 
 
     t_baslangic = time.perf_counter()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        # Thread 1: Web scraping - Selenium ile akor sitesinden veri çekme
-        web_gelecek = executor.submit(
-            web_scraper.scrape_chords_from_web,
-            artist_name,
-            song_title
-        )
-
-        # Thread 2: MIDI pipeline - Basic Pitch donusumu + davul temizleme
-        midi_gelecek = executor.submit(
-            _midi_donusum_pipeline,
-            wav_path,
-            output_folder
-        )
-
-        # Her iki sonucu topla: thread bitene kadar bu satırlar bloklanır.
-        web_chords = web_gelecek.result()   # Web scraping sonucu
-        clean_midi = midi_gelecek.result()  # Davulsuz MIDI yolu
+    # Web scraping (Selenium/requests) ve MIDI pipeline (Basic Pitch) ikisi de
+    # senkron/bloklayici oldugundan asyncio.to_thread ile ayri thread'lere
+    # devredilir; asyncio.gather ikisini paralel calistirir.
+    web_chords, clean_midi = await asyncio.gather(
+        asyncio.to_thread(web_scraper.scrape_chords_from_web, artist_name, song_title),
+        asyncio.to_thread(_midi_donusum_pipeline, wav_path, output_folder),
+    )
 
     t_bitis = time.perf_counter()
     print(f'\n Her iki paralel işlem tamamlandı. Toplam süre: {t_bitis - t_baslangic:.1f}s')
 
     if not clean_midi:
-        print('MIDI dönüşümü başarısız oldu, işlem iptal.')
-        return
+        print('[HATA] MIDI dönüşümü başarısız oldu, işlem iptal.')
+        return {"error": "MIDI dönüşümü başarısız oldu (Basic Pitch). Terminal loglarına bak."}
 
     # ADIM 4: Matematiksel Analiz 
     # clean_midi (Thread 2'den) ve web_chords (Thread 1'den) hazır hale geldi. Artık ton, tempo ve akor analizi yapılır.
@@ -228,7 +226,7 @@ def run_harmonai_pipeline_async(url_or_path: str, artist_name: str, song_title: 
     }
 
 
-def run_harmonai_pipeline_fast(url_or_path: str, artist_name: str, song_title: str, language: str = "tr"):
+async def run_harmonai_pipeline_fast(url_or_path: str, artist_name: str, song_title: str, language: str = "tr"):
     """
     Basic Pitch olmadan, librosa tabanlı hızlı analiz pipeline'ı.
     Web scraping ile paralel çalışır; MIDI dönüşümü yapılmaz.
@@ -248,7 +246,7 @@ def run_harmonai_pipeline_fast(url_or_path: str, artist_name: str, song_title: s
 
     # ADIM 1: Ses dosyasını hazırla
     wav_path = None
-    if 'http' in url_or_path:
+    if url_or_path.startswith(('http://', 'https://')):
         wav_path, _ = audio_core.process_youtube_link(url_or_path, output_folder)
     else:
         if os.path.exists(url_or_path):
@@ -277,20 +275,12 @@ def run_harmonai_pipeline_fast(url_or_path: str, artist_name: str, song_title: s
 
     t_baslangic = time.perf_counter()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        web_gelecek = executor.submit(
-            web_scraper.scrape_chords_from_web,
-            artist_name,
-            song_title,
-            language,
-        )
-        analiz_gelecek = executor.submit(
-            fast_analyzer.analyze_wav_fast,
-            wav_path,
-        )
-
-        web_chords = web_gelecek.result()
-        analiz = analiz_gelecek.result()
+    # Web scraping ve librosa analizi senkron oldugundan ikisi de
+    # asyncio.to_thread ile devredilir; asyncio.gather paralel calistirir.
+    web_chords, analiz = await asyncio.gather(
+        asyncio.to_thread(web_scraper.scrape_chords_from_web, artist_name, song_title, language),
+        asyncio.to_thread(fast_analyzer.analyze_wav_fast, wav_path),
+    )
 
     t_bitis = time.perf_counter()
     print(f'\n Paralel işlem tamamlandı. Toplam süre: {t_bitis - t_baslangic:.1f}s')

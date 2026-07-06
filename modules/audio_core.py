@@ -72,10 +72,13 @@ def audio_to_midi(wav_path, output_folder):
     print(" Ses MIDI'ye Çevriliyor (Basic Pitch)...")
     base_name = os.path.splitext(os.path.basename(wav_path))[0]
 
-    mevcut_midiler = glob.glob(os.path.join(output_folder, f"*{base_name}*basic_pitch.mid"))
-    if mevcut_midiler:
+    # Basic Pitch çıktı adı deterministiktir: <girdi_adı>_basic_pitch.mid
+    # Eşzamanlı çalışmada (auto_builder + app) getctime'a göre "en yeni .mid"
+    # seçmek yanlış dosyayı yakalayabilir; önce beklenen adı doğrudan kontrol et.
+    beklenen = os.path.join(output_folder, f"{base_name}_basic_pitch.mid")
+    if os.path.exists(beklenen):
         print(f"     Önceden analiz edilmiş MIDI bulundu. Tekrar çevrilmiyor.")
-        return mevcut_midiler[0]
+        return beklenen
 
     try:
         predict_and_save(
@@ -91,16 +94,17 @@ def audio_to_midi(wav_path, output_folder):
         hata_mesaji = str(e)
         if "already exists" in hata_mesaji:
             print("   Dosya zaten varmış (Hata yakalandı ve atlatıldı).")
-            cands = glob.glob(os.path.join(output_folder, "*.mid"))
+            if os.path.exists(beklenen):
+                return beklenen
+            cands = glob.glob(os.path.join(output_folder, f"*{base_name}*.mid"))
             if cands: return max(cands, key=os.path.getctime)
         else:
             print(f" Basic Pitch Dönüşüm Hatası: {e}")
             return None
 
-    cands = glob.glob(os.path.join(output_folder, f"*{base_name}*basic_pitch.mid"))
-    if not cands:
-        cands = glob.glob(os.path.join(output_folder, f"*{base_name}*.mid"))
-    
+    if os.path.exists(beklenen):
+        return beklenen
+    cands = glob.glob(os.path.join(output_folder, f"*{base_name}*.mid"))
     return max(cands, key=os.path.getctime) if cands else None
 
 def clean_midi_drums(midi_path):

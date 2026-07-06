@@ -229,5 +229,5 @@ Eğer <web_data> eksik veya hatalıysa, bunu raporun ilgili bölümünde açık�
         f"Son hata: {last_error}\n\n"
         "ÇÖZÜM: https://aistudio.google.com/apikey adresine git → "
         "Billing EKLEMEDEN yeni proje oluştur → API anahtarı üret → "
-        "llm_agent.py içindeki GEMINI_API_KEY değerini güncelle."
+        ".env dosyasındaki GEMINI_API_KEY değerini güncelle (anahtarı asla koda yazma)."
     )

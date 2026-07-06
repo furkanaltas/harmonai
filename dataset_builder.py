@@ -3,7 +3,7 @@ dataset_builder.py — HarmonAI Toplu Veri Seti Oluşturucu
 =========================================================
 
 PIPELINE AKIŞI (her şarkı için):
-    1. Gemini'den Türkçe + Batı şarkı listesi üret (dinamik)
+    1. Groq (llama-3.3-70b) ile Türkçe + Batı şarkı listesi üret (dinamik)
     2. Her şarkı için YouTube'da ytsearch1 ile ilk videoyu bul
     3. Sesi WAV olarak geçici klasöre indir
     4. Basic Pitch (CNN) ile MIDI'ye çevir
@@ -53,14 +53,13 @@ import socket
 from dotenv import load_dotenv
 from groq import Groq
 from yt_dlp import YoutubeDL
-import pretty_midi
 
 with contextlib.redirect_stderr(io.StringIO()):
     from basic_pitch.inference import predict_and_save
     from basic_pitch import ICASSP_2022_MODEL_PATH
 
 from modules.audio_core import clean_midi_drums
-from modules.db_manager import db_init, db_get_or_create_song, db_get_existing_songs
+from modules.db_manager import db_init, db_get_or_create_song, db_get_existing_songs, db_song_exists
 
 # ── Yapılandırma ──────────────────────────────────────────────────────────────
 load_dotenv()
@@ -260,10 +259,13 @@ def _wav_to_midi(wav_yolu: str) -> Optional[str]:
     klasor = os.path.dirname(wav_yolu)
     temel_ad = os.path.splitext(os.path.basename(wav_yolu))[0]
 
-    onceki = glob.glob(os.path.join(klasor, f"*{temel_ad}*basic_pitch.mid"))
-    if onceki:
+    # Basic Pitch çıktı adı deterministiktir: <girdi_adı>_basic_pitch.mid
+    # Eşzamanlı çalışmada (auto_builder + app) getctime'a göre "en yeni .mid"
+    # seçmek yanlış dosyayı yakalayabilir; önce beklenen adı doğrudan kontrol et.
+    beklenen = os.path.join(klasor, f"{temel_ad}_basic_pitch.mid")
+    if os.path.exists(beklenen):
         log.info("   ♻️  MIDI zaten mevcut.")
-        return onceki[0]
+        return beklenen
 
     try:
         with contextlib.redirect_stderr(io.StringIO()):
@@ -277,16 +279,17 @@ def _wav_to_midi(wav_yolu: str) -> Optional[str]:
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
             )
     except Exception as e:
-        hata = str(e)
-        if "already exists" in hata:
-            adaylar = glob.glob(os.path.join(klasor, "*.mid"))
+        if "already exists" in str(e):
+            if os.path.exists(beklenen):
+                return beklenen
+            adaylar = glob.glob(os.path.join(klasor, f"*{temel_ad}*.mid"))
             return max(adaylar, key=os.path.getctime) if adaylar else None
         log.error(f"   Basic Pitch hatası: {e}")
         return None
 
-    adaylar = glob.glob(os.path.join(klasor, f"*{temel_ad}*basic_pitch.mid"))
-    if not adaylar:
-        adaylar = glob.glob(os.path.join(klasor, f"*{temel_ad}*.mid"))
+    if os.path.exists(beklenen):
+        return beklenen
+    adaylar = glob.glob(os.path.join(klasor, f"*{temel_ad}*.mid"))
     return max(adaylar, key=os.path.getctime) if adaylar else None
 
 
@@ -326,49 +329,20 @@ def _temizle(*dosyalar: Optional[str]) -> None:
 
 def _db_de_var_mi(sarki_adi: str) -> bool:
     """
-    Şarkı adı DB'de zaten kayıtlıysa True döner.
-    Hem tam eşleşme hem de kısmi LIKE araması yapar.
+    Şarkı adı DB'de (PostgreSQL) zaten kayıtlıysa True döner.
+    Kontrol db_manager.db_song_exists ile 3 kademede yapılır (tam → ILIKE → filename).
     Bu sayede "Duman - Herşey Seninle Güzel" sorgusu,
-    "Duman - Herşey Seninle Güzel (Official Audio)" şeklinde kaydedilmiş
-    girişleri de yakalar.
+    "Duman - Herşey Seninle Güzel (Official Audio)" girişlerini de yakalar.
     """
-    import sqlite3
-    db_yolu = os.path.join(os.path.dirname(__file__), "dataset.db")
-    if not os.path.exists(db_yolu):
-        return False
+    parca = sarki_adi.split('-', 1)
+    if len(parca) == 2:
+        artist, title = parca[0].strip(), parca[1].strip()
+    else:
+        artist, title = "", sarki_adi.strip()
     try:
-        with sqlite3.connect(db_yolu) as con:
-            parca = sarki_adi.split('-', 1)
-            if len(parca) == 2:
-                artist = parca[0].strip()
-                title  = parca[1].strip()
-                # 1. Tam eşleşme (en hızlı)
-                satir = con.execute(
-                    "SELECT id FROM songs WHERE artist = ? AND title = ?",
-                    (artist, title)
-                ).fetchone()
-                if satir:
-                    return True
-                # 2. Kısmi eşleşme: artist aynı, title içinde geçiyor mu
-                satir = con.execute(
-                    "SELECT id FROM songs WHERE artist LIKE ? AND title LIKE ?",
-                    (f"%{artist}%", f"%{title}%")
-                ).fetchone()
-                if satir:
-                    return True
-                # 3. filename içinde geçiyor mu (YouTube başlığıyla kaydedilmiş olabilir)
-                satir = con.execute(
-                    "SELECT id FROM songs WHERE filename LIKE ?",
-                    (f"%{title[:30]}%",)
-                ).fetchone()
-                return satir is not None
-            else:
-                satir = con.execute(
-                    "SELECT id FROM songs WHERE title LIKE ? OR filename LIKE ?",
-                    (f"%{sarki_adi}%", f"%{sarki_adi[:30]}%")
-                ).fetchone()
-                return satir is not None
-    except Exception:
+        return db_song_exists(artist, title)
+    except Exception as e:
+        log.warning(f"   DB duplicate kontrolü başarısız ({type(e).__name__}): {e}")
         return False
 
 
@@ -445,7 +419,7 @@ def _tek_sarki_isle(sarki_adi: str, dil: str) -> bool:
 
 def veri_seti_olustur(tr_adet: int = 25, en_adet: int = 25) -> None:
     """
-    Gemini'den şarkı listesi al ve her biri için pipeline'ı çalıştır.
+    Groq'tan şarkı listesi al ve her biri için pipeline'ı çalıştır.
 
     Parametreler:
         tr_adet : İstenilen Türkçe şarkı sayısı

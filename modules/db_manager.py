@@ -16,17 +16,51 @@ import psycopg2
 import psycopg2.extras
 from datetime import datetime
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Bağlantı bilgileri env'den okunur; yoksa yerel geliştirme varsayılanları geçerli.
+DB_HOST = os.getenv("HARMONAI_DB_HOST", "localhost")
+DB_NAME = os.getenv("HARMONAI_DB_NAME", "harmonai")
+DB_USER = os.getenv("HARMONAI_DB_USER", "furkan")
+SUPABASE_HOST = os.getenv("SUPABASE_DB_HOST", "db.kjrfyqsqmfljhwraobmw.supabase.co")
 
 
 # ── Bağlantı ──────────────────────────────────────────────────────────────────
 
 def _baglanti() -> psycopg2.extensions.connection:
-    con = psycopg2.connect(
-        host="localhost",
-        database="harmonai",
-        user="furkan",
-        password=os.getenv("database_password")
-    )
+    """
+    Varsayılan backend YERELdir. Supabase'e bağlanmak için .env'e
+    HARMONAI_DB_BACKEND=supabase ekle (supabase_password da tanımlı olmalı).
+    Not: db.<ref>.supabase.co doğrudan bağlantısı IPv6 gerektirir; IPv4 ağda
+    Session Pooler adresini SUPABASE_DB_HOST olarak vermek gerekir.
+    Hiçbir şifre bulunamazsa belirsiz bir psycopg2 hatası yerine açık hata verir.
+    """
+    backend = os.getenv("HARMONAI_DB_BACKEND", "local").lower()
+    supabase_sifre = os.getenv("supabase_password")
+    if backend == "supabase" and supabase_sifre:
+        con = psycopg2.connect(
+            host=SUPABASE_HOST,
+            port=5432,
+            database="postgres",
+            user="postgres",
+            password=supabase_sifre,
+            sslmode="require"
+        )
+    else:
+        sifre = os.getenv("HARMONAI_DB_PASSWORD") or os.getenv("database_password")
+        if not sifre:
+            raise RuntimeError(
+                "Veritabanı şifresi bulunamadı. .env dosyasında 'database_password' "
+                "(yerel PostgreSQL) veya 'supabase_password' (Supabase) tanımlı olmalı."
+            )
+        con = psycopg2.connect(
+            host=DB_HOST,
+            database=DB_NAME,
+            user=DB_USER,
+            password=sifre,
+        )
     con.autocommit = False
     return con
 
@@ -43,15 +77,15 @@ def db_init() -> None:
             cur = _cursor(con)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS songs (
-                    id            SERIAL PRIMARY KEY,
-                    filename      TEXT    NOT NULL UNIQUE,
-                    artist        TEXT,
-                    title         TEXT,
-                    language      TEXT    CHECK(language IN ('tr','en','unknown')) DEFAULT 'unknown',
-                    midi_path     TEXT,
-                    spotify_key   INTEGER,
-                    spotify_mode  INTEGER,
-                    label         TEXT    DEFAULT 'unknown'
+                    id                  SERIAL PRIMARY KEY,
+                    filename            TEXT    NOT NULL UNIQUE,
+                    artist              TEXT,
+                    title               TEXT,
+                    language            TEXT    CHECK(language IN ('tr','en','unknown')) DEFAULT 'unknown',
+                    midi_path           TEXT,
+                    spotify_key         INTEGER,
+                    label               TEXT    DEFAULT 'unknown',
+                    ground_truth_label  TEXT    DEFAULT NULL
                 )
             """)
             cur.execute("""
@@ -192,6 +226,61 @@ def db_save_analysis(
         con.close()
 
 
+def db_song_count() -> int:
+    """songs tablosundaki toplam kayıt sayısını döndürür."""
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute("SELECT COUNT(*) AS n FROM songs")
+            return cur.fetchone()["n"]
+    finally:
+        con.close()
+
+
+def db_song_exists(artist: str, title: str) -> bool:
+    """
+    Şarkının DB'de kayıtlı olup olmadığını 3 kademede kontrol eder:
+      1. Tam eşleşme (artist + title)
+      2. ILIKE kısmi eşleşme (büyük/küçük harf duyarsız)
+      3. filename içinde geçiyor mu (YouTube başlığıyla kaydedilmiş olabilir)
+    dataset_builder'ın mükerrer indirme kontrolü için kullanılır.
+    """
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            if artist and title:
+                cur.execute(
+                    "SELECT id FROM songs WHERE artist = %s AND title = %s LIMIT 1",
+                    (artist, title)
+                )
+                if cur.fetchone():
+                    return True
+                cur.execute(
+                    "SELECT id FROM songs WHERE artist ILIKE %s AND title ILIKE %s LIMIT 1",
+                    (f"%{artist}%", f"%{title}%")
+                )
+                if cur.fetchone():
+                    return True
+                cur.execute(
+                    "SELECT id FROM songs WHERE filename ILIKE %s LIMIT 1",
+                    (f"%{title[:30]}%",)
+                )
+                return cur.fetchone() is not None
+
+            sorgu = title or artist
+            if not sorgu:
+                return False
+            cur.execute(
+                "SELECT id FROM songs WHERE title ILIKE %s OR filename ILIKE %s LIMIT 1",
+                (f"%{sorgu}%", f"%{sorgu[:30]}%")
+            )
+            return cur.fetchone() is not None
+    finally:
+        con.close()
+
+
 def db_get_existing_songs() -> list[str]:
     """
     DB'deki tüm şarkıları "artist - title" formatında döndürür.
@@ -219,6 +308,72 @@ def db_song_label(song_id: int) -> Optional[str]:
     finally:
         con.close()
     return satir["label"] if satir else None
+
+
+def db_random_sample_for_ground_truth(n: int = 40) -> list[dict]:
+    """
+    Henüz insan tarafından doğrulanmamış (ground_truth_label IS NULL),
+    sistem tarafından etiketlenmiş n adet rastgele şarkı döndürür.
+    """
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute(
+                """SELECT id, filename, artist, title, midi_path
+                   FROM songs
+                   WHERE label != 'unknown' AND ground_truth_label IS NULL
+                   ORDER BY RANDOM()
+                   LIMIT %s""",
+                (n,)
+            )
+            return cur.fetchall()
+    finally:
+        con.close()
+
+
+def db_set_ground_truth(song_id: int, ground_truth_label: str) -> None:
+    """İnsan tarafından doğrulanmış (kulakla belirlenmiş) etiketi kaydeder."""
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute(
+                "UPDATE songs SET ground_truth_label = %s WHERE id = %s",
+                (ground_truth_label, song_id)
+            )
+    finally:
+        con.close()
+
+
+def db_ground_truth_accuracy() -> dict:
+    """
+    İnsan tarafından doğrulanmış şarkılarda sistem tahmini (label) ile
+    insan etiketini (ground_truth_label) karşılaştırıp doğruluk raporu üretir.
+    """
+    con = _baglanti()
+    try:
+        with con:
+            cur = _cursor(con)
+            cur.execute(
+                """SELECT filename, artist, title, label, ground_truth_label
+                   FROM songs
+                   WHERE ground_truth_label IS NOT NULL"""
+            )
+            satirlar = cur.fetchall()
+    finally:
+        con.close()
+
+    toplam = len(satirlar)
+    dogru = sum(1 for r in satirlar if r["label"] == r["ground_truth_label"])
+    yanlislar = [r for r in satirlar if r["label"] != r["ground_truth_label"]]
+
+    return {
+        "toplam": toplam,
+        "dogru": dogru,
+        "oran": round(dogru / toplam * 100, 1) if toplam else None,
+        "yanlislar": yanlislar,
+    }
 
 
 def db_already_analyzed(song_id: int, analyzer: str) -> bool:

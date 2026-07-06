@@ -44,6 +44,9 @@ dataset.db-wal
 *.log
 auto_builder.log
 
+# Node (Supabase JS client — henüz kod tarafından kullanılmıyor)
+node_modules/
+
 # IDE & Tools
 .vscode/
 .idea/
@@ -69,3 +72,4 @@ desktop.ini
 *.joblib
 
 
+.cache

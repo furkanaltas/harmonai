@@ -19,7 +19,6 @@ import argparse
 import re
 from pathlib import Path
 
-import numpy as np
 import pretty_midi
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -40,9 +40,9 @@ for i, root in enumerate(NOTE_NAMES):
 PROFILES_V3 = {
     'Major': [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
     'Minor': [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],
-    'Harmonic Minor': [6.0, 2.0, 3.5, 5.0, 2.5, 4.0, 2.0, 5.0, 4.5, 2.0, 5.5, 2.0], 
-    'Melodic Minor':  [6.0, 2.0, 3.5, 4.5, 2.5, 4.0, 2.0, 5.0, 3.5, 4.5, 5.0, 2.0],
-    'Hicaz': [6.0, 5.5, 1.5, 4.0, 5.0, 4.5, 2.0, 5.0, 3.0, 2.5, 5.0, 2.0],
+    'Harmonic Minor': [6.0, 2.0, 3.5, 5.0, 2.5, 4.0, 2.0, 5.0, 4.5, 2.0, 2.0, 5.5],
+    'Melodic Minor':  [6.0, 2.0, 3.5, 4.5, 2.5, 4.0, 2.0, 5.0, 3.5, 4.5, 2.0, 5.0],
+    'Hicaz': [6.0, 5.5, 1.5, 2.0, 5.0, 4.5, 2.0, 5.0, 3.0, 2.5, 5.0, 2.0],
     'Dorian': [6.0, 2.5, 3.5, 5.0, 3.0, 4.0, 3.5, 5.0, 3.0, 4.5, 3.5, 2.5],
     'Phrygian (Kürdi)': [6.0, 5.0, 3.5, 4.5, 3.0, 3.5, 2.5, 5.0, 4.0, 2.5, 3.5, 2.5],
     'Mixolydian': [6.0, 2.0, 3.5, 2.5, 4.5, 4.0, 2.5, 5.0, 2.5, 3.5, 5.0, 2.5],
@@ -71,8 +71,9 @@ def identify_complex_chord(chroma_vector, threshold=0.60, detected_key=None, det
             # Seçilen modun (örn: Minör) profilini, şarkının tonuna (örn: B) doğru kaydırır.
             shifted_profile = np.roll(mode_profile, key_idx)
             tonality_weights = 1.0 + (shifted_profile / np.max(shifted_profile)) * CB
-        except:
-            pass 
+        except (ValueError, KeyError) as e:
+            # Bilinmeyen key/mode geldiğinde bonus atlanır, akor tespiti nötr ağırlıkla sürer.
+            print(f"[math_theory] Tonalite bonusu atlandı ({detected_key} {detected_mode}): {e}")
 
     best_c, max_sim = None, -1
     norm_vec = chroma_vector / (np.linalg.norm(chroma_vector) + 1e-10) 

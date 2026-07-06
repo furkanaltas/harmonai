@@ -39,8 +39,6 @@ _WESTERN_SITES = [
     "e-chords.com",
     "chordify.net",
 ]
-_TRUSTED_SITES = _TURKISH_SITES + _WESTERN_SITES
-
 _OPERA_PATHS = [
     r'C:\Users\Asus\AppData\Local\Programs\Opera\opera.exe',
     r'C:\Program Files\Opera\opera.exe',
@@ -95,7 +93,8 @@ def _get_webdriver(browser: str):
             opts.add_argument('--disable-dev-shm-usage')
             return webdriver.Chrome(options=opts)
 
-    except Exception:
+    except Exception as e:
+        print(f"    [webdriver:{browser}] başlatılamadı — {type(e).__name__}: {str(e).splitlines()[0][:120]}")
         return None
 
 
@@ -117,7 +116,8 @@ def _search_url_via_browser(query: str, browser: str, sites: list[str]) -> str |
             if any(site in href for site in sites):
                 return href
         return None
-    except Exception:
+    except Exception as e:
+        print(f"    [ddg:selenium] arama hatası — {type(e).__name__}: {str(e).splitlines()[0][:120]}")
         return None
     finally:
         try:
@@ -143,7 +143,8 @@ def _search_url_via_requests(query: str, sites: list[str]) -> str | None:
         res.raise_for_status()
         soup = BeautifulSoup(res.text, 'html.parser')
         return _extract_url_from_ddg(soup, sites)
-    except Exception:
+    except Exception as e:
+        print(f"    [ddg:requests] arama hatası — {type(e).__name__}: {str(e).splitlines()[0][:120]}")
         return None
 
 
@@ -162,7 +163,8 @@ def _fetch_html(url: str, use_browser: bool = False) -> str | None:
                 driver.get(url)
                 time.sleep(3)  # JS render için bekle
                 return driver.page_source
-            except Exception:
+            except Exception as e:
+                print(f"    [fetch:selenium] {url[:60]} — {type(e).__name__}: {str(e).splitlines()[0][:120]}")
                 return None
             finally:
                 try:
@@ -174,7 +176,8 @@ def _fetch_html(url: str, use_browser: bool = False) -> str | None:
         res = requests.get(url, headers=_HEADERS, timeout=12)
         res.raise_for_status()
         return res.text
-    except Exception:
+    except Exception as e:
+        print(f"    [fetch:requests] {url[:60]} — {type(e).__name__}: {str(e).splitlines()[0][:120]}")
         return None
 
 
