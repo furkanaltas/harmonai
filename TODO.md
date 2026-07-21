@@ -84,6 +84,26 @@ Checklemek için: `- [x]` yap veya Claude'a "bunu tamamla" de.
   - Model EĞİTİMİ binlerce bağımsız etiket ister. İkisini karıştırma:
     100 şarkıyla model eğitmeye çalışmak overfitting garantisidir.
 
+- [ ] **Diyatonik aile çözücüsü (relative major/minor + Dorian/Phrygian) — YENİDEN DENENECEK**
+  - Durum: Temmuz 2026'da denendi, **regresyon verdi** (%28→%18, tonik %46→%34) ve geri alındı.
+  - Analiz doğruydu: 100 şarkılık ground truth'ta tonik hatalarının %31'i (17 şarkı),
+    Major/Minor/Dorian/Phrygian/Mixolydian/Lydian'ın AYNI 7 notayı paylaşmasından
+    kaynaklanıyor (kroma bunları pitch-class seviyesinde ayırt edemiyor).
+  - Uygulama kabaldı: 6 aday arasında "son akor" kanıtına +5 puan vermek, çoğu
+    şarkıda düşük frekanslı (0-3) sayımları eziyordu — rastgele hangi aday son
+    akorla eşleşiyorsa (genelde gerçek toniğin IV'ü, yani Lydian adayı) başka
+    hiçbir destek olmadan kazanıyordu. Yani ilk tie-break denemesindeki
+    "körlemesine oylama" hatası, bu sefer 2 değil 6 aday üzerinde tekrarlandı.
+  - Yeniden denerken: son-akor bonusunu kaldır, yalnızca kümülatif tonik akor
+    frekansına dayan; VEYA orijinal adayın kanıtı ~0 iken başka bir adayın
+    belirgin (2x+) fazla kanıtı varsa değiştir gibi çok daha muhafazakâr bir
+    eşik koy. Her denemeden sonra 100 şarkılık ground truth'ta ölç, tutmazsa
+    hemen geri al (`git diff` ile karşılaştır, DB'ye yazmadan önce _tmp script
+    ile doğrula — bu oturumda izlenen disiplin).
+  - Kod: `modules/math_theory.py`'de fonksiyon tamamen kaldırıldı (yarım kod
+    bırakılmadı); üç çağrı noktası (`midi_labeler.py`, `fast_analyzer.py`,
+    `harmonai_pipeline.py`) önceki (tie_break_key + margin) haline döndü.
+
 ---
 
 ## Yeni Özellikler

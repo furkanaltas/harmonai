@@ -1,0 +1,48 @@
+# HarmonAI — Streamlit uygulaması + PostgreSQL
+#
+# Kullanım:
+#   docker compose up --build
+#   http://localhost:8501
+#
+# Önkoşul: proje kökünde .env dosyası (GEMINI_API_KEY, GROQ_API_KEY,
+# database_password) — bu dosya .gitignore'lu, commit edilmez.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: harmonai
+      POSTGRES_USER: furkan
+      POSTGRES_PASSWORD: ${database_password}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U furkan -d harmonai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # db_manager.py bu değişkenlerle yerel PostgreSQL'e bağlanır (Supabase değil)
+      HARMONAI_DB_HOST: db
+      HARMONAI_DB_NAME: harmonai
+      HARMONAI_DB_USER: furkan
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./veri_seti:/app/veri_seti
+      - ./analyzed_songs:/app/analyzed_songs
+      - ./youtube_downloads:/app/youtube_downloads
+      - ./dataset_temp_audio:/app/dataset_temp_audio
+
+volumes:
+  db_data:

@@ -14,6 +14,15 @@ KULLANIM:
 
 import os
 import sys
+
+# Windows terminali cp1254 kullanır; Türkçe dosya adlarındaki birleşik aksan
+# işaretleri veya ok sembolü gibi karakterler patlatır.
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 import glob
 import argparse
 import re
