@@ -16,8 +16,8 @@ services:
       POSTGRES_PASSWORD: ${database_password}
     volumes:
       - db_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # Host'a port açılmıyor — app zaten Docker'ın iç ağı üzerinden 'db' host
+    # adıyla erişiyor, dışarıya açmaya gerek yok (gereksiz saldırı yüzeyi).
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U furkan -d harmonai"]
       interval: 5s

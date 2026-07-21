@@ -6,15 +6,39 @@ try:
 except Exception:
     pass
 
+import os
 import streamlit as st
 from harmonai_pipeline import run_harmonai_pipeline_async, run_harmonai_pipeline_fast
 
 st.set_page_config(
     page_title="HarmonAI",
-    page_icon="assets/favicon.png" if __import__('os').path.exists("assets/favicon.png") else "🎵",
+    page_icon="assets/favicon.png" if os.path.exists("assets/favicon.png") else "🎵",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
+
+
+def _parola_dogrula() -> bool:
+    """
+    APP_PASSWORD .env'de tanımlıysa basit bir parola ekranı gösterir.
+    Tanımlı değilse (yerel geliştirme) korumasız çalışmaya devam eder.
+    """
+    beklenen = os.getenv("APP_PASSWORD")
+    if not beklenen:
+        return True
+    if st.session_state.get("dogrulandi"):
+        return True
+
+    st.markdown('<p class="harmonai-title">HarmonAI</p>', unsafe_allow_html=True)
+    girilen = st.text_input("Parola", type="password")
+    if st.button("Giriş"):
+        if girilen == beklenen:
+            st.session_state["dogrulandi"] = True
+            st.rerun()
+        else:
+            st.error("Yanlış parola.")
+    return False
+
 
 # ── Stil ─────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -82,6 +106,9 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+if not _parola_dogrula():
+    st.stop()
 
 # ── Başlık ────────────────────────────────────────────────────────────────────
 st.markdown('<p class="harmonai-title">HarmonAI</p>', unsafe_allow_html=True)
