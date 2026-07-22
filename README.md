@@ -135,6 +135,18 @@ harmonai/
 └── .gitignore
 ```
 
+## Visualizations
+
+A Power BI dashboard summarizing key/mode distribution across the
+1,930-song dataset, comparing Western vs. Turkish repertoire — see
+[`visualizations/`](visualizations/) for the full report and analysis.
+
+![Mode Distribution by Song Origin](visualizations/Image1.png)
+
+Western-language songs skew Major (453 vs. 131 Turkish), while Turkish
+songs skew Minor (562 vs. 267 Western) and carry nearly all of the
+dataset's Phrygian (Kürdi) and Hicaz representation.
+
 ## Output Example
 
 ```
